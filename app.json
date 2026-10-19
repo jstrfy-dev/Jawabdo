@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "JawabDo Assistant",
+    "slug": "jawabdo-assistant",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {}
+  }
+}
