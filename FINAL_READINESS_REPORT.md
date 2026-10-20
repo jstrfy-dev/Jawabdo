@@ -1,150 +1,116 @@
-# JawabDo Final Readiness Report
+# JawabDo — Final Readiness Report
 
 Audit date: 2026-10-20
 
-## Executive summary
+## Executive result
 
-JawabDo is an Expo SDK 54 / React Native application with a web target. The current code is a local, single-device prototype, not a connected business service. It seeds sample salon data and stores edits in AsyncStorage. There is no backend, database, account system, WhatsApp Cloud API integration, AI provider integration, or production deployment configuration in this workspace.
+**Not ready for public release, real customer traffic, or Google Play production.** JawabDo remains an Expo SDK 54 / React Native demo client. The separate Node service now has a PostgreSQL-backed multi-business backend foundation, signed webhook ingestion, durable deduplication, worker processing, conservative AI/FAQ handling, booking constraints, and persistent reminder jobs. Those backend changes pass unit tests and the Expo web export still builds. They have **not** been run against PostgreSQL or a real Meta/Anthropic account, and the Expo app is not connected to the API.
 
-The Expo dependency check and web export passed. That verifies dependency alignment and bundle generation only; it does not prove the app works on a physical phone, that data is secure across users, or that bookings and WhatsApp messages work in production. **Do not launch this build for real customer records or appointments.**
+No real Meta account, customer WhatsApp message, external integration, deployment, or production delivery was verified. Do not send production broadcasts or onboard actual customers yet.
 
 ## Architecture inspected
 
-- **Frontend:** Expo / React Native, JavaScript, React Navigation; native and web start commands are defined in `package.json`.
-- **Configuration:** `app.json`; dependency lockfile is `package-lock.json`.
-- **Persistence:** `store/store.js` seeds demo business/customer/booking/chat records and saves state in device-local AsyncStorage.
-- **Screens:** dashboard, inbox, calendar, assistant/service and FAQ editor, onboarding/opening hours, customer list/profile, conversation, settings, and setup guide.
-- **Backend and database:** none found. No API routes, SQL schema/migrations, server, database client, or authentication provider are present.
-- **Integrations:** no live WhatsApp, AI, payment, push-notification, or cloud-sync client was found. Assistant answers are a local rule-based preview, not AI.
-- **Tests and lint:** no test files, test runner, lint/typecheck/build scripts, or CI configuration were found. The supported build verification used Expo CLI directly.
-- **Assets:** demo records reference image hosts such as Unsplash and Picsum; those require network access and are not locally bundled.
+- **Frontend:** Expo SDK 54, React Native, React Navigation; web export also configured.
+- **Current client state:** `store/store.js` and existing screens still use local demo records in AsyncStorage. No account sign-in, secure session storage, server API client, business switch, live connection screen, server inbox, or server-backed calendar has been wired into the client.
+- **Backend:** separate Node.js HTTP service under `server/`; `server/index.js` is the old allowlist-only single-number test server. `server/production-index.js` is the new database-backed server.
+- **Database:** PostgreSQL schema and migration runner added. No configured or tested database instance is available in this workspace; database migration success is unverified.
+- **WhatsApp:** official Meta Graph API only. Signed webhook uses `X-Hub-Signature-256`; webhook events are keyed/deduplicated in PostgreSQL; per-business Embedded Signup tokens are encrypted at rest. Server-side code exchange and WABA subscription endpoint exist. There is no Expo Embedded Signup v4 UI, and no real connection was attempted.
+- **AI:** optional server-side Anthropic integration. The model selects a verified FAQ; the server returns the exact stored answer, not generated freeform content. Named service prices are answered only from stored price values; booking/availability questions are handed off. Without AI configuration, the generic safe handoff path is used. This is not a substitute for validating vendor privacy, answer quality, and customer consent.
+- **Bookings/reminders:** API requires a caller assertion of customer confirmation, checks business opening hours, serializes booking checks, and has a PostgreSQL exclusion constraint. Reminder jobs persist in PostgreSQL and are handled by a worker using approved WhatsApp templates. Customer consent evidence is not yet reliably collected through a customer-facing flow; no reminder was sent.
+- **Database security:** tenant rows use PostgreSQL Row-Level Security policies and transaction-local user/business context, parameterized queries, plus role checks on APIs. These policies and cross-tenant behavior have not yet been tested against a live PostgreSQL server.
 
 ## Changes made
 
-- Removed development crash telemetry that sent error messages and stack traces to `wron.ai`; screen error boundaries still display a local recovery view.
-- Added `.gitignore` rules for dependencies, generated builds, local environment files, and logs. This does not remove files already staged in Git.
-- Added `.env.example`. The current app reads no environment variables; it warns against placing server secrets in a mobile client.
-- Added this report and a project-specific WhatsApp/deployment guide below.
+- Added `server/api.js` account, business, service/FAQ, connection, conversation, booking, and deletion API handlers.
+- Added PostgreSQL connection/transaction helpers, schema migrations, migration runner, and production server entry point.
+- Added scrypt password hashing, short-lived signed access tokens, and AES-256-GCM encryption for stored Meta credentials.
+- Added durable signed webhook ingestion, per-business processing, status updates, duplicate protection, opt-out suppression, and persistent reminder worker.
+- Added conservative AI intent classification and verified-fact responses with handoff fallback.
+- Added focused configuration, security, and worker unit tests.
+- Updated `.env.example`, README, WhatsApp setup guide, and this report with server-only placeholders and actual limitations.
+- Updated Settings and Guide screens so they accurately say the client is demo/local and not connected to backend/WhatsApp.
+- Retained the existing Expo demo screens and legacy test server; did not expose server keys to the client or use unofficial WhatsApp automation.
 
-## Validation run
+## Validation actually performed
 
 | Check | Result |
 |---|---|
-| `npm ls --depth=0` | Passed; installed direct dependencies were present. |
-| `npx expo install --check` | Passed: dependencies are compatible with the installed Expo SDK. |
-| `npx expo export --platform web --output-dir "$env:TEMP\jawabdo-web-build-final"` | Passed after the telemetry change; web bundle exported to the Windows temp directory. |
-| Rebuilt-bundle telemetry scan | Passed; no `wron.ai` or legacy preview reporter strings found in the generated web JavaScript bundle. |
-| Browser smoke test at 375 × 812 | Passed for dashboard, inbox, calendar, assistant, settings, onboarding/opening hours, customer list/profile, and unknown-question fallback. These are UI smoke checks against demo data, not production workflow tests. |
-| `npm audit --omit=dev` | **Failed:** 42 transitive advisories (19 moderate, 23 high). Some fixes require breaking Expo/React Navigation version changes; no forced dependency changes were applied. |
-| Automated unit/integration tests | Not run: no test suite or test script exists. |
-| Physical iOS/Android, registration/login, tenant-isolation, booking-race, live network and Meta tests | Not performed: no backend/auth/database/integrations or test accounts exist. |
+| `npm test` | **Passed: 27 tests, 6 suites, 0 failures.** Includes existing mocked WhatsApp webhook tests plus configuration, crypto, durable event-intake, and AI guardrail unit tests. No real provider calls. |
+| `npx expo export --platform web` | **Passed.** Metro bundled the Expo client and exported the web bundle. This only validates client bundling, not app-server integration. |
+| `npx expo install --check` | **Passed:** Expo dependencies match the installed SDK. |
+| `node --check` over `server/*.js` | **Passed:** backend JavaScript syntax checks. |
+| `npm audit --omit=dev` | **Failed:** 42 advisories (19 moderate, 23 high, 0 critical). Suggested forced fixes include breaking Expo/React Navigation upgrades; none were applied. |
+| `functions.runTests` targeted invocation | The test tool did not discover files; the project’s actual `npm test` runner was then run and passed. |
+| PostgreSQL migration execution / tenant isolation / booking-race integration tests | **Not run.** No `psql` executable or configured database was available; Docker was installed but its daemon was unavailable. |
+| Real Meta Embedded Signup, webhook delivery, outbound reply, message statuses, approved reminder template | **Not run.** Meta account, app review, credentials, public HTTPS deployment, and template approval are owner/deployment actions. |
+| Android build, physical-device accessibility/offline testing, Play Store submission | **Not run.** No production application ID/signing/EAS/store workflow is configured. |
 
-## Prioritized launch blockers and security findings
+The repository had pre-existing/staged changes and generated files at the start of this task. Those were not deliberately discarded. Review `git status` before staging or committing; do not commit `.env`, `node_modules`, or generated `dist` output.
 
-1. **Critical — no shared, authoritative backend or booking constraints.** Bookings and business data are local to one device. There is no database-level exclusion/transaction for staff/time conflicts, and no reliable booking creation API. Do not use the calendar to confirm real appointments.
-2. **Critical — no authentication, authorization, or tenant isolation.** There are no users, business memberships, server-side access checks, or database policies. A multi-business service cannot safely store real records yet.
-3. **Critical — no live WhatsApp or AI integration.** Inbox chats and assistant replies are samples/local previews. The owner cannot receive a WhatsApp message through this app, and replies are not sent.
-4. **High — demo content can be mistaken for real business data.** Sample records persist in local storage. The interface labels much of the data as demo, but there is no production account provisioning or verified data migration/reset workflow.
-5. **High — customer privacy and lifecycle controls are absent.** No server-side consent/opt-in records, opt-out processing, retention policy, customer export/deletion workflow, backup policy, or controlled conversation-history access exists.
-6. **High — no webhook protections or operations setup.** There is no callback URL, signature validation, duplicate-event store, rate limiting, audit trail, health monitoring, or production error logging.
-7. **Medium — external demo image requests.** Demo images load from external hosts. Replace with approved/local or controlled CDN assets before making a privacy commitment about third-party requests.
-8. **High — dependency advisories remain unresolved.** `npm audit --omit=dev` found 42 transitive advisories (19 moderate, 23 high), including dependencies reached through Expo/Metro/config tooling, React Navigation, and related packages. The audit's forced remediation proposes breaking framework/navigation changes; that migration needs an SDK-compatible upgrade plan and regression tests before release.
-9. **Repository hygiene — unusually large staged change set.** At audit start, `git status` showed 8,457 staged additions (over 1 million lines), including dependencies and application files. Those staged changes were pre-existing and were not unstaged or discarded. Review the staged files before committing; `.gitignore` does not unstage files already added to the index. Do not commit `node_modules` or generated `dist` output.
+## Security findings and launch blockers
 
-### Existing feature reality
+1. **Critical — frontend is not integrated.** The app remains demo/local-only and has no authentication, tenant-bound API calls, WhatsApp onboarding UI, real business configuration sync, inbox, calendar, account-deletion UI, or privacy controls. API work alone does not make the product usable or safe for public customers.
+2. **Critical — database and tenant guarantees are unverified.** Apply migrations to a clean PostgreSQL instance and test RLS with separate businesses and roles, plus concurrent booking requests, before relying on isolation or double-booking prevention. `btree_gist` must be enabled by the database provider.
+3. **High — public account registration is intentionally blocked in production.** Email verification, password reset, and delivery/expiry of verification tokens do not exist. Local development registration must not be treated as production identity verification.
+4. **High — Meta onboarding is incomplete.** The backend Embedded Signup code exchange exists, but the supported Meta v4 client flow, App Review/permissions, WABA configuration, HTTPS deployment, webhook subscriptions, and real test are still required. Nothing is connected until Meta returns valid assets and the server stores the connection.
+5. **High — consent and privacy workflows are incomplete.** The webhook suppresses STOP/UNSUBSCRIBE and START/UNSTOP, but there is no customer-facing consent flow, privacy policy/retention configuration, export/deletion workflow for customer records, or complete data-subject request process. Account deletion removes JawabDo database rows but does not unsubscribe the WABA from the Meta app; the owner must remove that app subscription in Meta until a disconnect flow exists. AI calls send eligible inbound text to Anthropic when configured; privacy/vendor review is required first.
+6. **High — booking API is not a complete appointment conversation flow.** It trusts an authenticated caller’s `customerConfirmed` and `reminderOptIn` booleans; there is no customer-side confirmation evidence or AI slot negotiation. Opening-hours checks and database conflict constraints exist in code but have not been integration-tested. Do not claim customer bookings are live.
+7. **High — reminders are queued, not verified delivered.** Approved customer and owner template names must be configured; Meta approval, opt-in proof, delivery callback, failed-job recovery, and fallback owner notification require end-to-end testing. Jobs missing templates fail rather than claim success. No reminder was sent in validation.
+8. **High — operational hardening remains.** Production host, TLS/database backups and restore tests, distributed/API rate limiting, monitoring/alerting, staff role management, privacy-safe audit tooling, CI, incident response, and Android signing/Play declarations are not complete.
+9. **High — dependency advisories remain.** A fresh `npm audit --omit=dev` after adding PostgreSQL reports 42 transitive advisories (19 moderate, 23 high). Do not apply forced major upgrades without an Expo compatibility and regression plan.
 
-- Dashboard, inbox, calendar, customer records, service/FAQ editor, business details, and settings are local UI/state features, not server-backed workflows.
-- The calendar can change sample booking status and move an item to the next day, but it is not a reservation system. Its current exact-time conflict check is local-only, does not reserve atomically, and does not account for service duration.
-- There is no registration or login screen, no real onboarding/account creation, no usable subscription billing, no push notification setup, and no customer-facing booking flow.
-- The assistant preview uses saved service/FAQ text and fallback wording. It has no live model, confidence scoring, verified availability lookup, or owner-notification channel.
-- A successful web bundle is not a substitute for mobile device, accessibility, network-failure, or end-to-end tests.
+## Environment variables still needed
 
-## Environment variables and secrets
+Configure values only in local `.env` for development and the secret store on the backend host for deployment:
 
-The **current code expects no environment variables**. `.env.example` deliberately contains no credential placeholders because no server/integration reads any variables today.
+- Required API/database: `DATABASE_URL`, `JWT_SECRET`, `ENCRYPTION_KEY`.
+- Required complete Meta connection group: `META_APP_ID`, `META_APP_SECRET`, `META_EMBEDDED_SIGNUP_CONFIG_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_API_VERSION`.
+- Optional server AI: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`.
+- Optional approved reminders: `WHATSAPP_CUSTOMER_REMINDER_TEMPLATE`, `WHATSAPP_OWNER_REMINDER_TEMPLATE`, `WHATSAPP_TEMPLATE_LANGUAGE`.
+- Deployment: `PUBLIC_BASE_URL`, `CORS_ORIGINS`, and `DATABASE_SSL` as applicable.
+- Legacy test-only server: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_TEST_RECIPIENTS`.
 
-When a dedicated backend is designed and implemented, it will need server-only configuration for (at minimum) the database, WhatsApp access token, Meta app secret, webhook verification token, phone-number ID, and Graph API version. Exact names and the callback URL must be documented by that backend implementation; they are **not implemented or expected by this project yet**. Never place any of these secrets in Expo `EXPO_PUBLIC_*` variables or in the mobile app.
+`.env.example` contains placeholders only. Do not put any of these secrets in Expo `EXPO_PUBLIC_*` variables or chat messages.
 
-## WhatsApp Cloud API status and setup guide
+## Local commands
 
-### Current exact connection details
-
-- Integration status: **not connected; no WhatsApp API code is present**.
-- Webhook callback URL: **none exists in this project**. Do not enter a guessed URL in Meta.
-- Environment-variable names expected by this code: **none**.
-- No credentials, tokens, account access, phone number, or external Meta configuration were available or changed during this audit.
-
-### What the owner will need
-
-1. A Meta account and a Meta for Developers app configured for a business.
-2. The WhatsApp product and a WhatsApp Business Account (WABA).
-3. A Meta-provided test sender/recipient for initial testing, then an eligible production business number.
-4. A production-managed access token, phone-number ID, WABA ID, Meta app secret, and a newly generated webhook verification token.
-5. A publicly reachable HTTPS backend, with its secrets stored in the backend host's secret manager—not shared in chat or embedded in the app.
-6. Required business verification, phone/display-name approval, permissions, customer opt-in wording, and approved templates for business-initiated reminders where Meta requires them.
-
-### Meta setup (after a backend endpoint has been deployed)
-
-1. Open [Meta for Developers](https://developers.facebook.com/) and create/configure a business app. Add the WhatsApp product and use the provided test number first if available.
-2. In the WhatsApp API setup panel, note the **Phone number ID** and **WhatsApp Business Account ID**. For a test, add and verify a recipient number as instructed by Meta.
-3. Send an initial test message using Meta's temporary test credentials. Do not use a personal WhatsApp password or OTP.
-4. For production, complete the required business verification, add/register an eligible business phone, obtain the required permissions, and provision a managed production token using Meta's supported business/system-user process. Do not rely on an expiring setup token.
-5. Deploy the JawabDo backend first. In Meta's WhatsApp configuration, set the callback to the exact HTTPS webhook URL published by that backend, enter its generated verification token, and complete verification.
-6. Subscribe the WABA/app to the `messages` webhook field. This is the field used for incoming message and message-status events. Validate webhook signatures with the Meta app secret, deduplicate event IDs, and acknowledge valid events promptly.
-7. Create/submit approved reminder templates in WhatsApp Manager. Use templates for messages outside the customer-service window when required. Track customer opt-in and honor opt-out requests before sending.
-
-**Stop point:** JawabDo currently has no backend, so there is no valid callback URL or verification token to enter in Meta. The exact project-specific environment names and runbook can only be finalized after the backend is implemented and deployed.
-
-### Project-side implementation needed
-
-The backend must be built before connecting Meta. At minimum it needs:
-
-- HTTPS `GET` webhook verification and signed `POST` webhook handling.
-- HMAC signature verification using the app secret, request-size limits, duplicate delivery protection, and safe acknowledgement/error handling.
-- A server-side Graph API client using a configured Graph API version and protected production token.
-- Tenant-scoped business/service/FAQ/customer data, explicit customer opt-in/opt-out state, and owner escalation.
-- A transactional availability check that includes staff, business hours, service duration, existing reservations, and concurrent requests before confirmation.
-- Approved-template reminder dispatch, delivery-status updates, structured logs that avoid message/phone/token secrets, rate limits, retention/deletion controls, and operational monitoring.
-- Authenticated owner APIs and database row-level/tenant access enforcement.
-
-There are currently **no exact webhook, AI, database, or Meta variable names to supply**. Proposed future names should be set by the backend implementation instead of being copied into this client.
-
-## Local startup commands
-
-Run in PowerShell from the project root:
+PowerShell from `C:\Users\PC1\Documents\App`:
 
 ```powershell
 npm install
-npm start
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# Edit .env locally and create/configure a PostgreSQL database first.
+npm run db:migrate
+npm run server:dev
 ```
 
-For a specific target:
+Expo demo:
 
 ```powershell
+npm start
 npm run web
 npm run android
-npm run ios
 ```
 
-The Android/iOS commands need the corresponding development environment/device. No backend is started by these commands. This project defines no test, lint, or typecheck command.
+Automated tests:
 
-## Deployment recommendation and steps
+```powershell
+npm test
+```
 
-### Recommended shape
+`npm run whatsapp:dev` is the isolated legacy test sender with a recipient allowlist. It is not the multi-tenant production server.
 
-Keep this as an **Expo mobile/web frontend**. Do not deploy a webhook inside the mobile app: phones are not publicly addressable, reliable webhook servers, and cannot safely hold Meta or AI secrets.
+## Deployment and Meta owner actions
 
-For a future production service, deploy a separate Node.js backend (for example, a managed web service on Render) and managed PostgreSQL (for example, Render PostgreSQL or a separately managed Postgres provider). Select and implement authentication, tenant boundaries, migrations, backups, and recovery before importing customer data. A static Expo web frontend can be hosted separately; Android/iOS releases should use the Expo/EAS build and store-submission process.
+1. Choose a TLS-enabled Node host and managed PostgreSQL 15+ provider that supports `btree_gist`; set backend secrets in the host dashboard.
+2. Review/approve migrations on a staging database. Run `npm run db:migrate`, verify RLS/isolation and concurrent booking conflicts, configure backups, and test restore.
+3. Deploy `npm run server:start` behind HTTPS. Health check is `/health`; Meta callback is exactly `https://<backend-host>/webhook`.
+4. In Meta for Developers, create/configure the app and WhatsApp product, set up Facebook Login for Business Embedded Signup v4, obtain the config ID, request WhatsApp management/messaging permissions, and finish required app/business verification and reviews.
+5. Set the webhook callback and matching verify token in Meta; subscribe to the `messages` field. Use Meta's test sender and only an authorized test recipient first.
+6. Implement the missing Expo Embedded Signup UI and authenticated API client before presenting a Connect button to business owners. Only show Connected after the backend verifies/stores the Meta assets.
+7. Create and obtain approval for reminder templates; configure exact template names/language and test consent, send, status callback, cancellation, and failure.
+8. Complete customer privacy/consent/deletion controls, Play Store declarations/privacy policy, Android application identity/signing, native device tests, production monitoring, and security review before public launch.
 
-### Deployment gates
+## Roman English summary
 
-1. Agree on the backend host, database, authentication model, tenant model, data retention, and booking rules.
-2. Implement and test server authorization, migrations/schema/indexes, transactional booking constraints, webhooks, idempotency, privacy controls, and backups.
-3. Add CI checks and automated tests for account flows, tenant isolation, invalid input, conflicts under concurrent requests, webhook signatures/retries, opt-out, and error states.
-4. Configure production secrets in the server host. Apply migrations and verify database backups/restore. Do not put server credentials in the Expo bundle.
-5. Configure a production HTTPS domain and health monitoring. Deploy the backend before configuring Meta's webhook.
-6. Build and review the Expo app; test web and native builds on actual devices. Configure client endpoints only after authentication and API protections are complete.
-7. Complete Meta verification/permissions and test with the provided number. Verify inbound message, outbound reply, status event, duplicate delivery, opt-out, and a template reminder before launch.
-8. Confirm support/contact procedures, privacy notice/consent, deletion requests, incident response, and production monitoring.
-
-**Production decision:** not ready. These gates require backend implementation plus owner/provider account actions that were not available in this workspace.
+JawabDo abhi **Play Store ya real customers ke liye ready nahi**. Backend ka database/API aur signed WhatsApp webhook foundation bana hai, aur 23 automated tests plus Expo web export pass hue. Lekin PostgreSQL migration, tenant isolation, Meta account/onboarding, real message, reminder templates/delivery, aur mobile app ko backend se jorna abhi verify/complete nahi hua. `.env` ki values khud secure jagah set karein; chat mein share na karein. Pehle test number par staging mein sab checks complete karein, phir hi apna eligible business number connect karein.

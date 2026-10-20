@@ -17,7 +17,7 @@ export default function SettingsScreen({ navigation }) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
         <Text style={s.eyebrow}>AAPKA ACCOUNT</Text>
         <Text style={s.title}>Settings</Text>
-        <Text style={s.subtitle}>Asaan settings — abhi saari tabdeeliyan isi device par demo data ke saath hain.</Text>
+        <Text style={s.subtitle}>Abhi yeh app local demo data use karti hai; server backend app ke saath connect nahi.</Text>
 
         <View style={s.card}>
           <View style={s.row}>
@@ -28,7 +28,7 @@ export default function SettingsScreen({ navigation }) {
             </View>
             <View style={s.badge}><Text style={s.badgeText}>SETUP REQUIRED</Text></View>
           </View>
-          <Text style={s.body}>Live messages ke liye Meta WhatsApp Business account, approved webhook/server aur customer opt-in zaroori hain. Is app mein abhi WhatsApp API configured nahi.</Text>
+          <Text style={s.body}>Multi-business Node/PostgreSQL backend foundation alag maujood hai, lekin app login aur official Meta Embedded Signup screen abhi wired nahi. Is liye real WhatsApp connected nahi aur customer traffic enable na karein.</Text>
           <Button label="Setup guide dekhein" variant="ghost" onPress={() => navigation.navigate('Guide')} />
         </View>
 
@@ -67,14 +67,14 @@ export default function SettingsScreen({ navigation }) {
             <Ionicons name="people-outline" size={19} color={t.accent} />
             <View style={{ flex: 1 }}>
               <Text style={s.settingText}>Team aur access</Text>
-              <Text style={s.muted}>Login/roles backend abhi maujood nahi.</Text>
+              <Text style={s.muted}>Backend auth foundation hai; app login aur roles management UI abhi connect nahi.</Text>
             </View>
           </View>
         </View>
 
         <View style={s.card}>
           <Text style={s.cardTitle}>Privacy aur data</Text>
-          <Text style={s.body}>Filhaal demo records is device ke local storage mein rehte hain. Login, cloud backup, team isolation aur server-side security ke liye backend setup chahiye.</Text>
+          <Text style={s.body}>Demo records is device ke local storage mein rehte hain. App cloud sync, customer privacy controls aur account deletion flow abhi configure nahi; production data use na karein.</Text>
         </View>
       </ScrollView>
     </Screen>

@@ -8,7 +8,7 @@ const STEPS = [
   ['storefront-outline', 'Apna business batayein', 'Naam, address aur opening hours set karein.', 'Misal: Noor Salon, Gulberg — 10am se 8pm.'],
   ['pricetag-outline', 'Services aur rates add karein', 'Har service ka sahi rate likhein; JawabDo sirf yahi rates preview mein use karega.', 'Misal: Hair colour — Rs 3,200 se.'],
   ['help-circle-outline', 'FAQs aur jawab tayyar karein', 'Parking, advance ya home service ke verified jawab save karein.', 'Misal: “Parking hai?” — “Ji, salon ke bahar street parking.”'],
-  ['logo-whatsapp', 'WhatsApp Business connect karein', 'Business number, Meta setup aur approved permissions chahiye. Abhi yeh app demo mode mein hai.', 'Customer ke opt-in aur WhatsApp ke approved templates ka khayal rakhein.'],
+  ['logo-whatsapp', 'WhatsApp Business connect karein', 'Backend webhook aur Embedded Signup server endpoints ka foundation hai, lekin Expo app mein login/Meta onboarding UI abhi wired nahi. WhatsApp abhi connected nahi; setup guide mein requirements hain.', 'Customer consent aur approved templates zaroori hain.'],
   ['chatbubbles-outline', 'Customer sawalon ka jawab dein', 'Configured live connection ke baad assistant kaam karega. Abhi preview sirf sample hai; inbox mein aap khud jawab bhej sakte hain.', 'Rate ya policy maloom na ho to owner se confirm karein.'],
   ['calendar-outline', 'Bookings aur customers dekhein', 'Inbox aur calendar mein requests review karein; customer notes aur tags record karein.', 'Booking ya payment ko confirmed tabhi kahein jab waqai confirm ho.'],
 ];
@@ -25,7 +25,7 @@ export default function GuideScreen({ navigation }) {
           <Text style={s.subtitle}>Aap apna business samjhayen; JawabDo customer sawalon aur bookings ko sambhalne mein madad karta hai.</Text>
           <View style={s.demoBanner}>
             <Ionicons name="information-circle-outline" size={19} color={t.warning} />
-            <Text style={s.demoText}>Abhi sample/demo mode hai — WhatsApp ya live AI connected nahi.</Text>
+            <Text style={s.demoText}>App demo mode hai — live backend login ya real WhatsApp account connected nahi.</Text>
           </View>
         </View>
         {STEPS.map(([icon, title, body, example], index) => (
