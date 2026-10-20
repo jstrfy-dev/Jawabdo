@@ -8,7 +8,7 @@ Yeh guide current JawabDo code ke mutabiq hai. WhatsApp webhook aur backend serv
 - Worker connected WABA ke encrypted token se customer text ka jawab bhejta hai. Anthropic server key na ho, ya model jawab na de sake, to generic owner-handoff reply hota hai. Unknown business facts / appointment availability AI se confirm nahi ki jati.
 - Appointment reminder rows persistent database mein schedule hoti hain. Delivery ke liye Meta mein approved template banane ke baad customer aur owner template names configure karne hote hain. Template missing ho to job failed dikhegi; bhejne ka jhoota daawa nahi hota.
 - Official Embedded Signup v4 ka **server-side code exchange endpoint** aur status API maujood hain, lekin Expo app mein Meta SDK / Facebook Login for Business onboarding screen abhi wired nahi. Is liye business account ko app UI se connect karna abhi mumkin nahi; successful connection show ya simulate nahi ki jati.
-- Expo screens abhi local demo data use karti hain; woh is backend mein login nahi kartin aur server conversations/bookings nahi dikhati.
+- Expo app mein backend sign-in, native SecureStore session, cloud business profile, services, FAQs aur WhatsApp status page ab hai. Dashboard/inbox/calendar abhi local demo data hain; cloud conversations/bookings screens abhi wired nahi.
 - `npm run whatsapp:dev` alag legacy test-only server hai. Isay production ya multiple businesses ke inbound traffic ke liye use na karein.
 - Real Meta account, customer message, template, token ya deployment is workspace mein verify nahi hua.
 
@@ -81,6 +81,8 @@ Production server API `http://localhost:3000` par chalegi; health check:
 Invoke-RestMethod http://localhost:3000/health
 ```
 
+Expo API URL web par default `http://localhost:3000` hai. Android Expo host ka LAN address port `3000` ke saath use karta hai. Detection na chale to emulator ke liye `EXPO_PUBLIC_API_URL=http://10.0.2.2:3000`, aur physical phone ke liye `EXPO_PUBLIC_API_URL=http://<computer-LAN-IP>:3000` set karein. Expo bundler restart karein. Phone/computer same Wi-Fi par hon aur Windows Firewall port 3000 allow kare. Web origin ko `.env` ke `CORS_ORIGINS` mein allow karein; default Expo web origin `http://localhost:8081` hai.
+
 Production webhook callback URL:
 
 ```text
@@ -131,6 +133,6 @@ Yeh endpoints mobile UI ka substitute nahi hain. App ko official Meta JS SDK / F
 
 Expo app akeli webhook serve nahi kar sakti. Backend ko HTTPS Node host par alag deploy karein; PostgreSQL ko managed encrypted service par, backups aur restore test ke saath rakhein. `npm run db:migrate` release step mein chalayein, uske baad `npm run server:start`. Host secrets sirf server environment mein rakhein. Webhook reverse proxy ko raw request body preserve karni hogi.
 
-Abhi public production account registration email verification ke baghair intentionally disabled hai; password reset/email delivery, mobile login/session storage, official Embedded Signup client, UI account deletion, and production Meta approval/deployment remaining work hain. Real connection, messages, bookings, reminder delivery, or Play Store readiness ko verified na samjhein.
+Mobile backend sign-in aur business profile/services/FAQs setup implemented hain. Native session Expo SecureStore mein aur web session tab-scoped `sessionStorage` mein hoti hai. Email verification backend par abhi implement nahi; production registration intentionally disabled, password reset/email delivery missing. Official Embedded Signup client, server-backed inbox/calendar, UI account deletion, and production Meta approval/deployment remaining work hain. Real connection, messages, bookings, reminder delivery, or Play Store readiness ko verified na samjhein.
 
 Account deletion ke backend endpoint se JawabDo database data delete hota hai, lekin yeh Meta WABA se app subscription khud remove nahi karta. Jab tak disconnect screen/API add nahi hoti, account delete karne se pehle Meta Business/WhatsApp settings mein JawabDo app subscription manually hataein. Is se number deregister ya WhatsApp Business app coexistence migrate nahi hoti.

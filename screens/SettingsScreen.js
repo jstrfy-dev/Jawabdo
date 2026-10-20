@@ -3,10 +3,12 @@ import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Button } from '../ui/kit';
 import { useTheme, useSetTheme } from '../ui/theme';
+import { useAuth } from '../auth/AuthContext';
 
 export default function SettingsScreen({ navigation }) {
   const t = useTheme();
   const setTheme = useSetTheme();
+  const { session, demoMode, switchToAccount, signOut } = useAuth();
   const s = styles(t);
   const plans = [
     { name: 'Starter', price: 'Rs. 3,000 / month', detail: 'Features aur limits abhi confirm karna baqi' },
@@ -18,6 +20,21 @@ export default function SettingsScreen({ navigation }) {
         <Text style={s.eyebrow}>AAPKA ACCOUNT</Text>
         <Text style={s.title}>Settings</Text>
         <Text style={s.subtitle}>Abhi yeh app local demo data use karti hai; server backend app ke saath connect nahi.</Text>
+
+        <View style={s.card}>
+          <Text style={s.cardTitle}>{session ? 'Cloud account' : 'Account aur cloud data'}</Text>
+          <Text style={s.muted}>
+            {session ? `Signed in: ${session.user.email}. Cloud profile/services/FAQs backend se load hote hain.` : 'Sign in karne par backend business profile, services, FAQs aur WhatsApp status manage kar sakte hain.'}
+          </Text>
+          {session ? (
+            <>
+              <Button label="Cloud business profile kholen" icon="cloud-outline" variant="ghost" onPress={() => navigation.navigate('CloudBusiness')} />
+              <Button label="Cloud account se sign out" variant="ghost" onPress={() => { void signOut(); }} />
+            </>
+          ) : demoMode ? (
+            <Button label="Cloud account sign in kholen" icon="log-in-outline" variant="ghost" onPress={switchToAccount} />
+          ) : null}
+        </View>
 
         <View style={s.card}>
           <View style={s.row}>
@@ -67,7 +84,7 @@ export default function SettingsScreen({ navigation }) {
             <Ionicons name="people-outline" size={19} color={t.accent} />
             <View style={{ flex: 1 }}>
               <Text style={s.settingText}>Team aur access</Text>
-              <Text style={s.muted}>Backend auth foundation hai; app login aur roles management UI abhi connect nahi.</Text>
+              <Text style={s.muted}>{session ? 'Current signed-in account cloud business profile manage kar sakta hai.' : 'Cloud account sign-in Settings ke upar maujood hai.'}</Text>
             </View>
           </View>
         </View>

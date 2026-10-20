@@ -33,6 +33,16 @@ npm start
 npm run web
 ```
 
+The app now has backend sign-in. Android stores access tokens using Expo SecureStore; web uses tab-scoped `sessionStorage`. Existing dashboard/inbox/calendar screens remain local demo screens. A signed-in user can open Settings → Cloud business profile to load/update supported server business fields, services, FAQs, and WhatsApp status.
+
+The backend listens on port `3000` unless `PORT` is changed. The centralized API URL uses:
+
+- Web: `http://localhost:3000`.
+- Android: the Expo development host's LAN address with port `3000`; without that host, emulator fallback is `http://10.0.2.2:3000`.
+- Physical Android on the same Wi-Fi: set `EXPO_PUBLIC_API_URL=http://<computer-LAN-IP>:3000` if automatic Expo host detection is unavailable, then restart Expo. Allow Node through Windows Firewall on private networks.
+
+`EXPO_PUBLIC_API_URL` is a public endpoint, **not a secret**. Never put database/JWT/Meta/Anthropic credentials in `EXPO_PUBLIC_*`. For web, configure `CORS_ORIGINS` to allow the Expo web origin, usually `http://localhost:8081`; production web origins must use HTTPS.
+
 Backend tests:
 
 ```powershell
@@ -43,7 +53,7 @@ npm test
 
 See [WHATSAPP_SETUP.md](./WHATSAPP_SETUP.md) for Meta Embedded Signup, webhook and safe test instructions. The backend must be reachable over HTTPS for Meta callbacks. The React Native app cannot host webhooks or secrets.
 
-The AI integration uses an optional server-side Anthropic API key; without it, inbound messages are handed off rather than answered with invented business facts. Approved reminder templates must be configured before reminders can be delivered. No provider credentials are included. The Expo client does not yet authenticate to this API, onboard Meta Embedded Signup, or display server data. Do not enable customer traffic until registration verification, the app flow, account deletion policy, tenant authorization, Meta approval, consent evidence, booking confirmation, reminders, and operational controls have been reviewed and tested.
+The AI integration uses an optional server-side Anthropic API key; without it, inbound messages are handed off rather than answered with invented business facts. Approved reminder templates must be configured before reminders can be delivered. No provider credentials are included. The Expo client does not onboard Meta Embedded Signup or show server-backed conversations/bookings. Registration/email verification is not production-ready. Do not enable customer traffic until account verification, the app flow, account deletion policy, tenant authorization, Meta approval, consent evidence, booking confirmation, reminders, and operational controls have been reviewed and tested.
 
 `WHATSAPP_SETUP.md` explains Meta prerequisites and the current backend boundary. `/webhook` is the callback path on the production backend, but Embedded Signup's mobile/web UI is not implemented yet.
 

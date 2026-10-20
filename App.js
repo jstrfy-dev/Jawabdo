@@ -1,10 +1,10 @@
 import './ui/nativeshim';
 import 'react-native-gesture-handler';
 import React from 'react';
-import { StyleSheet, Platform, View, Text, useWindowDimensions } from 'react-native';
+import { StyleSheet, Platform, View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,9 +23,13 @@ import GuideScreen from './screens/GuideScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import ConversationScreen from './screens/ConversationScreen';
 import CustomersListScreen from './screens/CustomersListScreen';
+import CloudBusinessScreen from './screens/CloudBusinessScreen';
+import AuthScreen from './screens/AuthScreen';
+import { AuthProvider, useAuth } from './auth/AuthContext';
  
 const Tab = createBottomTabNavigator();
 const RootStack = createStackNavigator();
+const navigationRef = createNavigationContainerRef();
  
  
 const ICONS = {
@@ -66,6 +70,7 @@ function Root() {
   const t = useTheme();
   return (
     <NavigationContainer
+      ref={navigationRef}
       theme={{
         ...DefaultTheme,
         dark: !!t.dark,
@@ -79,6 +84,7 @@ function Root() {
       <RootStack.Screen name="Onboarding" component={guardScreen(OnboardingScreen, "Onboarding")} />
       <RootStack.Screen name="Guide" component={guardScreen(GuideScreen, "Guide")} />
       <RootStack.Screen name="Settings" component={guardScreen(SettingsScreen, "Settings")} />
+      <RootStack.Screen name="CloudBusiness" component={guardScreen(CloudBusinessScreen, "CloudBusiness")} options={{ title: 'Cloud business' }} />
       <RootStack.Screen name="Conversation" component={guardScreen(ConversationScreen, "Conversation")} />
       </RootStack.Navigator>
     </NavigationContainer>
@@ -104,10 +110,31 @@ function WebPhone({ children }) {
 
 function AppShell() {
   const { storageError } = useStore();
+  const { session, demoMode, loading } = useAuth();
   const theme = useTheme();
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg }}>
+        <Text style={{ color: theme.textMuted }}>JawabDo session load ho raha hai...</Text>
+      </View>
+    );
+  }
+  if (!session && !demoMode) return <AuthScreen />;
   return (
     <>
       <Root />
+      {session ? (
+        <Pressable
+          onPress={() => navigationRef.isReady() && navigationRef.navigate('CloudBusiness')}
+          accessibilityRole="button"
+          accessibilityLabel="Open cloud business profile"
+          style={{ position: 'absolute', top: Platform.OS === 'web' ? 52 : 8, left: 14, right: 14, zIndex: 20, padding: 9, borderRadius: 10, backgroundColor: theme.warning + 'EE' }}
+        >
+          <Text style={{ color: theme.text, fontSize: 11, fontWeight: '700', textAlign: 'center' }}>
+            Cloud account signed in · Dashboard, inbox aur calendar abhi local demo hain · Tap for cloud profile
+          </Text>
+        </Pressable>
+      ) : null}
       {storageError ? (
         <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, bottom: 88, padding: 12, borderRadius: 12, backgroundColor: '#7F1D1D', zIndex: 10 }}>
           <Text style={{ color: '#FFFFFF', fontSize: 12, lineHeight: 18 }}>{storageError}</Text>
@@ -125,7 +152,9 @@ export default function App() {
         <ThemeProvider theme="forest">
           <WebPhone>
             <StoreProvider>
-              <AppShell />
+              <AuthProvider>
+                <AppShell />
+              </AuthProvider>
             </StoreProvider>
           </WebPhone>
         </ThemeProvider>

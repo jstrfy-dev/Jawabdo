@@ -2,7 +2,7 @@ const {
   createHash,
   randomBytes,
 } = require('node:crypto');
-const { hashPassword, signToken, verifyPassword, encryptSecret } = require('./security');
+const { hashPassword, signToken, verifyPassword, verifyToken, encryptSecret } = require('./security');
 const { withTransaction } = require('./db');
 
 const BODY_LIMIT_BYTES = 1024 * 1024;
@@ -193,36 +193,6 @@ function createApiHandler(config, pool, options = {}) {
       return true;
     }
 
-    const conversationPath = pathname.match(/^\/api\/conversations\/([0-9a-f-]{36})(?:\/messages)?$/i);
-    if (conversationPath && pathname.endsWith('/messages') && request.method === 'GET') {
-      const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => (
-        client.query(
-          `SELECT id,direction,sender,body,delivery_status,error_code,created_at
-           FROM messages WHERE business_id=$1 AND conversation_id=$2
-           ORDER BY created_at DESC LIMIT 200`,
-          [session.businessId, conversationPath[1]],
-        )
-      ));
-      send(response, 200, { messages: result.rows.reverse() });
-      return true;
-    }
-
-    if (conversationPath && !pathname.endsWith('/messages') && request.method === 'PATCH') {
-      const body = await readBody(request);
-      if (!['ai', 'owner_handling', 'closed'].includes(body.state)) validation('Conversation state must be ai, owner_handling, or closed.');
-      const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client, role) => {
-        if (!['owner', 'manager'].includes(role)) throw new HttpError(403, 'Only a business owner or manager may update conversations.', 'insufficient_role');
-        return client.query(
-          `UPDATE conversations SET state=$3,updated_at=now()
-           WHERE business_id=$1 AND id=$2 RETURNING id,state`,
-          [session.businessId, conversationPath[1], body.state],
-        );
-      });
-      if (!result.rowCount) throw new HttpError(404, 'Conversation not found.', 'conversation_not_found');
-      send(response, 200, { conversation: result.rows[0] });
-      return true;
-    }
-
     try {
       if (pathname === '/api/config/public' && request.method === 'GET') {
         send(response, 200, {
@@ -313,6 +283,36 @@ function createApiHandler(config, pool, options = {}) {
       }
 
       const session = authorization(request, config);
+      const conversationPath = pathname.match(/^\/api\/conversations\/([0-9a-f-]{36})(?:\/messages)?$/i);
+
+      if (conversationPath && pathname.endsWith('/messages') && request.method === 'GET') {
+        const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => (
+          client.query(
+            `SELECT id,direction,sender,body,delivery_status,error_code,created_at
+             FROM messages WHERE business_id=$1 AND conversation_id=$2
+             ORDER BY created_at DESC LIMIT 200`,
+            [session.businessId, conversationPath[1]],
+          )
+        ));
+        send(response, 200, { messages: result.rows.reverse() });
+        return true;
+      }
+
+      if (conversationPath && !pathname.endsWith('/messages') && request.method === 'PATCH') {
+        const body = await readBody(request);
+        if (!['ai', 'owner_handling', 'closed'].includes(body.state)) validation('Conversation state must be ai, owner_handling, or closed.');
+        const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client, role) => {
+          if (!['owner', 'manager'].includes(role)) throw new HttpError(403, 'Only a business owner or manager may update conversations.', 'insufficient_role');
+          return client.query(
+            `UPDATE conversations SET state=$3,updated_at=now()
+             WHERE business_id=$1 AND id=$2 RETURNING id,state`,
+            [session.businessId, conversationPath[1], body.state],
+          );
+        });
+        if (!result.rowCount) throw new HttpError(404, 'Conversation not found.', 'conversation_not_found');
+        send(response, 200, { conversation: result.rows[0] });
+        return true;
+      }
 
       if (pathname === '/api/business' && request.method === 'GET') {
         const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => (
@@ -718,7 +718,13 @@ function createApiHandler(config, pool, options = {}) {
         : error?.code === '23P01' || (error?.code === '23505' && pathname === '/api/auth/register')
           ? 409
           : 500;
-      if (status >= 500) logger.error({ event: 'api_request_failed', path: pathname, status });
+      if (status >= 500) logger.error({
+        event: 'api_request_failed',
+        path: pathname,
+        status,
+        errorName: error?.name || 'UnknownError',
+        errorCode: error?.code || null,
+      });
       send(response, status, {
         error: error instanceof HttpError
           ? error.message
