@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Button } from '../ui/kit';
 import { useTheme, useSetTheme } from '../ui/theme';
@@ -9,14 +9,37 @@ import { useCloudData } from '../auth/CloudDataContext';
 export default function SettingsScreen({ navigation }) {
   const t = useTheme();
   const setTheme = useSetTheme();
-  const { session, demoMode, switchToAccount, signOut } = useAuth();
+  const { session, demoMode, switchToAccount, signOut, api } = useAuth();
   const cloud = useCloudData();
   const whatsappConnected = cloud.connection?.status === 'connected';
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const s = styles(t);
   const plans = [
     { name: 'Starter', price: 'Rs. 3,000 / month', detail: 'Features aur limits abhi confirm karna baqi' },
     { name: 'Pro', price: 'Rs. 7,000 / month', detail: 'Features aur limits abhi confirm karna baqi' },
   ];
+
+  async function deleteAccount() {
+    setDeleteError('');
+    if (deleteConfirmation !== 'DELETE MY ACCOUNT' || !deletePassword) {
+      setDeleteError('Type DELETE MY ACCOUNT and enter your password to continue.');
+      return;
+    }
+    setDeletingAccount(true);
+    try {
+      await api.deleteAccount(session.accessToken, deleteConfirmation, deletePassword);
+      await signOut();
+    } catch (error) {
+      setDeleteError(error.message || 'Account deletion could not be completed.');
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
   return (
     <Screen>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
@@ -99,6 +122,55 @@ export default function SettingsScreen({ navigation }) {
         <View style={s.card}>
           <Text style={s.cardTitle}>Privacy aur data</Text>
           <Text style={s.body}>{session ? 'Business records configured backend database mein store hote hain. Production customer traffic se pehle consent, retention, privacy policy aur account deletion workflows ko review karein.' : 'Demo records is device ke local storage mein rehte hain. Sign in ke baghair koi live business data load nahi hota.'}</Text>
+          {session ? (
+            <View style={s.deleteAccount}>
+              <Text style={s.cardTitle}>Delete cloud account</Text>
+              <Text style={s.body}>
+                This permanently deletes your account and the business data you own. It cannot be undone. If other team members still share a business, deletion is blocked to protect their data.
+              </Text>
+              {!showDeleteAccount ? (
+                <Button label="Delete account…" variant="ghost" onPress={() => { setDeleteError(''); setShowDeleteAccount(true); }} />
+              ) : (
+                <>
+                  <Text style={s.deleteLabel}>Type DELETE MY ACCOUNT</Text>
+                  <TextInput
+                    value={deleteConfirmation}
+                    onChangeText={setDeleteConfirmation}
+                    autoCapitalize="characters"
+                    accessibilityLabel="Type DELETE MY ACCOUNT to confirm"
+                    style={s.deleteInput}
+                  />
+                  <Text style={s.deleteLabel}>Current password</Text>
+                  <TextInput
+                    value={deletePassword}
+                    onChangeText={setDeletePassword}
+                    secureTextEntry
+                    autoComplete="current-password"
+                    accessibilityLabel="Current password"
+                    style={s.deleteInput}
+                  />
+                  {deleteError ? <Text accessibilityRole="alert" style={s.deleteError}>{deleteError}</Text> : null}
+                  <Button
+                    label={deletingAccount ? 'Deleting account…' : 'Permanently delete account'}
+                    variant="ghost"
+                    onPress={() => { void deleteAccount(); }}
+                    disabled={deletingAccount}
+                  />
+                  <Button
+                    label="Keep my account"
+                    variant="ghost"
+                    onPress={() => {
+                      setShowDeleteAccount(false);
+                      setDeleteConfirmation('');
+                      setDeletePassword('');
+                      setDeleteError('');
+                    }}
+                    disabled={deletingAccount}
+                  />
+                </>
+              )}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </Screen>
@@ -122,6 +194,10 @@ const styles = (t) => StyleSheet.create({
   planName: { color: t.text, fontSize: 15, fontWeight: '700' },
   price: { color: t.accent, fontSize: 13, fontWeight: '700', marginLeft: 8 },
   note: { color: t.warning, fontSize: 12, lineHeight: 18, marginTop: 12 },
+  deleteAccount: { marginTop: 18, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
+  deleteLabel: { color: t.text, fontSize: 12, fontWeight: '700', marginTop: 12, marginBottom: 5 },
+  deleteInput: { minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: t.border, paddingHorizontal: 12, color: t.text, backgroundColor: t.bg },
+  deleteError: { color: t.danger || '#B42318', fontSize: 12, lineHeight: 18, marginTop: 10 },
   settingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border, marginTop: 6 },
   settingText: { color: t.text, fontSize: 14, fontWeight: '600', marginHorizontal: 10, flex: 1 },
 });

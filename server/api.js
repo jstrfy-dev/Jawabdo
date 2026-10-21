@@ -782,6 +782,23 @@ function createApiHandler(config, pool, options = {}) {
           if (!ownerMembership.rows.some((row) => row.business_id === session.businessId)) {
             throw new HttpError(403, 'Only a business owner can delete this account.', 'insufficient_role');
           }
+          const sharedBusinesses = await client.query(
+            `SELECT membership.business_id
+             FROM business_memberships membership
+             WHERE membership.user_id <> $1
+               AND membership.business_id IN (
+                 SELECT business_id FROM business_memberships WHERE user_id=$1
+               )
+             LIMIT 1`,
+            [session.sub],
+          );
+          if (sharedBusinesses.rowCount) {
+            throw new HttpError(
+              409,
+              'This account still shares a business with other team members. Transfer ownership or remove team access before deleting it.',
+              'business_has_members',
+            );
+          }
           await client.query(
             `DELETE FROM businesses WHERE id IN (
                SELECT business_id FROM business_memberships WHERE user_id=$1 AND role='owner'

@@ -43,6 +43,8 @@ The MySQL API provides authentication, business profile/hours, services and pric
 
 The MySQL API does not currently configure or send WhatsApp messages/reminders. It reports WhatsApp as not connected; do not treat a saved connection row as a live integration. The existing PostgreSQL production backend and its webhook/worker implementation remain available through `npm run db:migrate` and `npm run server:dev` / `npm run server:start` when using its configured PostgreSQL database. These are separate database runtimes; MySQL startup does not migrate or modify PostgreSQL data.
 
+Signed-in accounts can request deletion from **Settings → Privacy and data** by confirming the action and re-entering their password. The API blocks deletion while other team members share any of the account's businesses; business ownership/data must be handled before retrying. Deletion removes the owned JawabDo database records and does not unsubscribe the WhatsApp app in Meta. Email verification and password reset are not implemented, so production account registration remains disabled.
+
 ### Run the Expo application
 
 JawabDo uses Expo SDK 57.0.31 with React Native 0.86.3 and React 19.2.3. Expo-managed native dependencies are aligned with SDK 57. SDK 55 and later require React Native's New Architecture; the project does not opt out of it.
@@ -78,4 +80,4 @@ npm test
 
 ## Android / Play Store
 
-`app.json` contains the current Expo app identity but no production Android application ID, signing, privacy policy URL, or EAS build/submit configuration. Set those only after the product's Play Store identity, privacy disclosures, account deletion workflow, and production backend are ready. Do not ship sample customer data as live account data.
+`app.json` still resolves to the placeholder application ID `com.placeholder.appid` and has no app icon/splash assets, signing, privacy policy URL, or EAS build/submit configuration. Google Play requires new apps and updates submitted from August 31, 2026 to target Android 16 (API 36) or later; the project does not explicitly set `targetSdkVersion`, so verify the generated native project target before building. Supply the actual package ID, brand assets, public privacy policy URL, support contact, Data safety declarations, and Play Console account details before release. Do not ship sample customer data as live account data.

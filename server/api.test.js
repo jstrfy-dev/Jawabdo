@@ -2,14 +2,14 @@ const assert = require('node:assert/strict');
 const { after, before, describe, it } = require('node:test');
 const { createApiHandler } = require('./api');
 const { createWhatsAppServer } = require('./app');
-const { signToken } = require('./security');
+const { hashPassword, signToken } = require('./security');
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
 const BUSINESS_ID = '00000000-0000-4000-8000-000000000002';
 const CONVERSATION_ID = '00000000-0000-4000-8000-000000000003';
 const JWT_SECRET = 'unit-test-jwt-secret-not-a-real-credential';
 
-function fakePool() {
+function fakePool(passwordHash) {
   return {
     async connect() {
       return {
@@ -21,10 +21,22 @@ function fakePool() {
           if (normalizedSql.startsWith('SELECT id,direction,sender,body')) {
             return { rowCount: 1, rows: [{ id: 'message-id', direction: 'inbound', sender: 'customer', body: 'Test message' }] };
           }
+          if (normalizedSql.startsWith('SELECT business_id FROM business_memberships WHERE user_id=')) {
+            return { rowCount: 1, rows: [{ business_id: BUSINESS_ID }] };
+          }
+          if (normalizedSql.startsWith('SELECT membership.business_id')) {
+            return { rowCount: 1, rows: [{ business_id: BUSINESS_ID }] };
+          }
           return { rowCount: 0, rows: [] };
         },
         release() {},
       };
+    },
+    async query(sql) {
+      if (sql.startsWith('SELECT password_hash')) {
+        return { rowCount: 1, rows: [{ password_hash: passwordHash }] };
+      }
+      return { rowCount: 0, rows: [] };
     },
   };
 }
@@ -45,7 +57,7 @@ describe('backend API route handling', () => {
       verifyToken: '',
       corsOrigins: [],
     };
-    const apiHandler = createApiHandler(config, fakePool(), {
+    const apiHandler = createApiHandler(config, fakePool(await hashPassword('test-password-123')), {
       logger: { info() {}, error() {} },
     });
     server = createWhatsAppServer({ ...config, appSecret: '' }, { apiHandler });
@@ -88,5 +100,19 @@ describe('backend API route handling', () => {
     assert.deepEqual(payload, {
       messages: [{ id: 'message-id', direction: 'inbound', sender: 'customer', body: 'Test message' }],
     });
+  });
+
+  it('blocks account deletion while the account belongs to a shared business', async () => {
+    const token = signToken({ sub: USER_ID, businessId: BUSINESS_ID }, JWT_SECRET);
+    const response = await fetch(`${baseUrl}/api/account`, {
+      method: 'DELETE',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ confirmation: 'DELETE MY ACCOUNT', password: 'test-password-123' }),
+    });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, 'business_has_members');
   });
 });
