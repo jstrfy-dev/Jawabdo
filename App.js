@@ -26,6 +26,7 @@ import CustomersListScreen from './screens/CustomersListScreen';
 import CloudBusinessScreen from './screens/CloudBusinessScreen';
 import AuthScreen from './screens/AuthScreen';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { CloudDataProvider } from './auth/CloudDataContext';
  
 const Tab = createBottomTabNavigator();
 const RootStack = createStackNavigator();
@@ -131,7 +132,7 @@ function AppShell() {
           style={{ position: 'absolute', top: Platform.OS === 'web' ? 52 : 8, left: 14, right: 14, zIndex: 20, padding: 9, borderRadius: 10, backgroundColor: theme.warning + 'EE' }}
         >
           <Text style={{ color: theme.text, fontSize: 11, fontWeight: '700', textAlign: 'center' }}>
-            Cloud account signed in · Dashboard, inbox aur calendar abhi local demo hain · Tap for cloud profile
+            Live business account · Dashboard, inbox, calendar aur customers server se load hote hain · Tap for profile
           </Text>
         </Pressable>
       ) : null}
@@ -151,11 +152,13 @@ export default function App() {
       <SafeAreaProvider>
         <ThemeProvider theme="forest">
           <WebPhone>
-            <StoreProvider>
-              <AuthProvider>
-                <AppShell />
-              </AuthProvider>
-            </StoreProvider>
+            <AuthProvider>
+              <CloudDataProvider>
+                <StoreProvider>
+                  <AppShell />
+                </StoreProvider>
+              </CloudDataProvider>
+            </AuthProvider>
           </WebPhone>
         </ThemeProvider>
       </SafeAreaProvider>

@@ -1,61 +1,80 @@
 # JawabDo
 
-JawabDo contains an Expo / React Native demo app and a separate Node.js backend. The app screens still use on-device sample data and are not connected to the multi-tenant API. The backend now has a PostgreSQL schema and API foundation, durable signed webhook queue, worker, optional server-side AI, and reminder queue, but it is not a public-launch-ready service.
+JawabDo is an Expo / React Native app with a separate Node.js backend. The app keeps its explicitly labeled demo mode; signed-in business screens use the backend API and never connect directly to the database.
 
-## Requirements
+## Windows and XAMPP (MySQL/MariaDB)
 
-- Node.js 20.6 or newer.
-- PostgreSQL 15 or newer with permission to install `btree_gist` for the multi-tenant backend.
-- HTTPS public backend URL and Meta app approval before real WhatsApp onboarding.
+### Requirements
 
-## Local setup
+- Node.js 22.13.x or later (recommended: Node.js 24 LTS). The current Node.js 24.14.1 environment meets this requirement.
+- XAMPP for Windows with its bundled MySQL/MariaDB server.
+- npm dependencies (`npm install`).
+
+### Start XAMPP and import the schema
+
+1. Open **XAMPP Control Panel** and click **Start** next to **MySQL**. Apache is optional for this Node/Expo application.
+2. Import the schema once:
+   - **phpMyAdmin:** open `http://localhost/phpmyadmin`, select **Import**, choose `database\jawabdo.sql`, then click **Import**. The script creates and selects the `jawabdo` database.
+   - **MySQL command line (PowerShell):**
+
+     ```powershell
+     Get-Content .\database\jawabdo.sql | & 'C:\xampp\mysql\bin\mysql.exe' --protocol=tcp -h 127.0.0.1 -P 3306 -u root
+     ```
+
+     If your MySQL root account has a password, add `-p` to the command; the client will prompt for it. Do not put the password in the command itself.
+
+`database\jawabdo.sql` uses MariaDB/MySQL-compatible `CREATE ... IF NOT EXISTS` statements and does not drop or truncate tables. It contains no business/customer seed data, passwords, or provider tokens. It is safe to re-import for initial schema setup, but it does not migrate records from an existing PostgreSQL database.
+
+### Configure and run the backend
+
+The default local connection is `127.0.0.1:3306`, database `jawabdo`, user `root`. The XAMPP instance detected during setup accepts root without a password. If your local credentials differ, add/update `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER`, and `MYSQL_PASSWORD` in `.env`.
+
+Never replace an existing `.env`. If there is no `.env` yet, the Windows startup script creates one from `.env.example`; review it and set a private `JWT_SECRET` (at least 32 bytes) before using the API. Database credentials stay in the Node backend and are not Expo `EXPO_PUBLIC_*` settings.
 
 ```powershell
 npm install
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+npm run mysql:check
+npm run mysql:start
 ```
 
-Edit `.env` locally. Do not commit it, send it in chat, or put server keys in Expo `EXPO_PUBLIC_*` variables. Use separate, generated secrets for `JWT_SECRET`, `ENCRYPTION_KEY`, and `WHATSAPP_VERIFY_TOKEN`.
+Or double-click `start-backend.bat`. It checks Node.js, dependencies, and database connectivity before starting; it never imports, resets, or deletes the database. The API listens on port `3000` by default. Its database health endpoint is `http://localhost:3000/api/health`; it reports API/database status only, not credentials.
 
-After creating a PostgreSQL database, configuring `DATABASE_URL`, and setting independent local `JWT_SECRET` and `ENCRYPTION_KEY` values:
+The MySQL API provides authentication, business profile/hours, services and prices, FAQs, customers, conversations/messages, appointments, and dashboard endpoints. Every signed-in data route checks the account's business membership and scopes its queries to that business. Registration is development-only until email verification is configured.
+
+The MySQL API does not currently configure or send WhatsApp messages/reminders. It reports WhatsApp as not connected; do not treat a saved connection row as a live integration. The existing PostgreSQL production backend and its webhook/worker implementation remain available through `npm run db:migrate` and `npm run server:dev` / `npm run server:start` when using its configured PostgreSQL database. These are separate database runtimes; MySQL startup does not migrate or modify PostgreSQL data.
+
+### Run the Expo application
+
+JawabDo uses Expo SDK 57.0.31 with React Native 0.86.3 and React 19.2.3. Expo-managed native dependencies are aligned with SDK 57. SDK 55 and later require React Native's New Architecture; the project does not opt out of it.
+
+This project uses Expo's managed/prebuild workflow: it has no checked-in `android` or `ios` directories and does not currently include `expo-dev-client`. The SDK 57 Expo Go app is not currently available in the app stores; Expo documents `eas go` for iOS devices and Expo CLI distribution for Android devices/emulators and iOS simulators. Otherwise, use an SDK 57-compatible development build. On Windows with Android Studio installed, `npx expo run:android` builds and runs Android and generates the native `android` directory. iOS builds require macOS and Xcode (`npx expo run:ios`). If adopting an EAS development-client workflow, install `expo-dev-client` and create a new development build after the SDK upgrade; an existing native binary must be rebuilt for SDK 57.
+
+Start the Expo development server in a separate terminal:
+
+```powershell
+npm start
+```
+
+Run the web app with `npm run web`. The Expo app is independent of Apache and the Node backend. Apache serves PHP projects; starting Apache alone does not start the Node API or the Expo app.
+
+The app uses `http://localhost:3000` for web/iOS, the Expo development host on Android, and `http://10.0.2.2:3000` as the Android emulator fallback. For a physical phone, set `EXPO_PUBLIC_API_URL=http://<computer-LAN-IP>:3000` in the Expo environment and allow Node through Windows Firewall on a private network. This variable is a public API origin, never a secret.
+
+## Existing PostgreSQL backend
+
+The original backend and durable Meta webhook/reminder worker continue to use PostgreSQL. To run that path, create/configure the PostgreSQL database and set `DATABASE_URL`, `JWT_SECRET`, and `ENCRYPTION_KEY` in `.env`, then run:
 
 ```powershell
 npm run db:migrate
 npm run server:dev
 ```
 
-`server:dev` starts the database-backed API and durable webhook/reminder worker. It is separate from the legacy allowlist-only test service (`npm run whatsapp:dev`). The production registration endpoint intentionally remains disabled until email verification delivery is implemented; local development registration is not a production identity workflow.
+`npm run whatsapp:dev` is a separate allowlist-only test webhook service. It is not the MySQL API. See [WHATSAPP_SETUP.md](./WHATSAPP_SETUP.md) for existing Meta integration requirements and limitations.
 
-Expo client:
-
-```powershell
-npm start
-npm run web
-```
-
-The app now has backend sign-in. Android stores access tokens using Expo SecureStore; web uses tab-scoped `sessionStorage`. Existing dashboard/inbox/calendar screens remain local demo screens. A signed-in user can open Settings → Cloud business profile to load/update supported server business fields, services, FAQs, and WhatsApp status.
-
-The backend listens on port `3000` unless `PORT` is changed. The centralized API URL uses:
-
-- Web: `http://localhost:3000`.
-- Android: the Expo development host's LAN address with port `3000`; without that host, emulator fallback is `http://10.0.2.2:3000`.
-- Physical Android on the same Wi-Fi: set `EXPO_PUBLIC_API_URL=http://<computer-LAN-IP>:3000` if automatic Expo host detection is unavailable, then restart Expo. Allow Node through Windows Firewall on private networks.
-
-`EXPO_PUBLIC_API_URL` is a public endpoint, **not a secret**. Never put database/JWT/Meta/Anthropic credentials in `EXPO_PUBLIC_*`. For web, configure `CORS_ORIGINS` to allow the Expo web origin, usually `http://localhost:8081`; production web origins must use HTTPS.
-
-Backend tests:
+## Tests
 
 ```powershell
 npm test
 ```
-
-## WhatsApp and AI
-
-See [WHATSAPP_SETUP.md](./WHATSAPP_SETUP.md) for Meta Embedded Signup, webhook and safe test instructions. The backend must be reachable over HTTPS for Meta callbacks. The React Native app cannot host webhooks or secrets.
-
-The AI integration uses an optional server-side Anthropic API key; without it, inbound messages are handed off rather than answered with invented business facts. Approved reminder templates must be configured before reminders can be delivered. No provider credentials are included. The Expo client does not onboard Meta Embedded Signup or show server-backed conversations/bookings. Registration/email verification is not production-ready. Do not enable customer traffic until account verification, the app flow, account deletion policy, tenant authorization, Meta approval, consent evidence, booking confirmation, reminders, and operational controls have been reviewed and tested.
-
-`WHATSAPP_SETUP.md` explains Meta prerequisites and the current backend boundary. `/webhook` is the callback path on the production backend, but Embedded Signup's mobile/web UI is not implemented yet.
 
 ## Android / Play Store
 

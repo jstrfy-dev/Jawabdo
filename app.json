@@ -6,7 +6,9 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-font",
+      "expo-status-bar"
     ],
     "ios": {
       "supportsTablet": false
