@@ -3,6 +3,8 @@ import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Button } from '../ui/kit';
 import { useTheme } from '../ui/theme';
+import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
 
 const STEPS = [
   ['storefront-outline', 'Apna business batayein', 'Naam, address aur opening hours set karein.', 'Misal: Noor Salon, Gulberg — 10am se 8pm.'],
@@ -15,6 +17,8 @@ const STEPS = [
 
 export default function GuideScreen({ navigation }) {
   const t = useTheme();
+  const { session } = useAuth();
+  const cloud = useCloudData();
   const s = styles(t);
   return (
     <Screen>
@@ -25,7 +29,9 @@ export default function GuideScreen({ navigation }) {
           <Text style={s.subtitle}>Aap apna business samjhayen; JawabDo customer sawalon aur bookings ko sambhalne mein madad karta hai.</Text>
           <View style={s.demoBanner}>
             <Ionicons name="information-circle-outline" size={19} color={t.warning} />
-            <Text style={s.demoText}>App demo mode hai — live backend login ya real WhatsApp account connected nahi.</Text>
+            <Text style={s.demoText}>{session
+              ? `Backend account signed in. WhatsApp ${cloud.connection?.status === 'connected' ? 'backend se connected report hua hai' : 'connected nahi hai'}.`
+              : 'App demo mode hai — live backend login ya real WhatsApp account connected nahi.'}</Text>
           </View>
         </View>
         {STEPS.map(([icon, title, body, example], index) => (
@@ -39,7 +45,7 @@ export default function GuideScreen({ navigation }) {
             <Text style={s.example}>{example}</Text>
           </View>
         ))}
-        <Button label="Business setup kholen" icon="arrow-forward" onPress={() => navigation.navigate('Onboarding')} />
+        <Button label="Business setup kholen" icon="arrow-forward" onPress={() => navigation.navigate(session ? 'CloudBusiness' : 'Onboarding')} />
         <Pressable onPress={() => navigation.navigate('Settings')} style={s.link}>
           <Text style={s.linkText}>WhatsApp, plans aur privacy settings</Text>
         </Pressable>

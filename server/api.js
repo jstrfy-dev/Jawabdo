@@ -201,6 +201,7 @@ function createApiHandler(config, pool, options = {}) {
           embeddedSignupConfigId: config.embeddedSignupConfigId || null,
           graphApiVersion: config.apiVersion || null,
           signupVersion: 'v4',
+          databaseDriver: 'postgres',
         });
         return true;
       }
@@ -544,6 +545,92 @@ function createApiHandler(config, pool, options = {}) {
         return true;
       }
 
+      if (pathname === '/api/dashboard' && request.method === 'GET') {
+        const dashboard = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => {
+          const result = await client.query(
+            `SELECT b.name,b.address,
+              (SELECT count(*)::int FROM bookings a
+               WHERE a.business_id=b.id AND date(a.starts_at AT TIME ZONE b.timezone)=date(now() AT TIME ZONE b.timezone)
+                 AND a.status='confirmed') AS confirmed_today,
+              (SELECT count(*)::int FROM bookings a
+               WHERE a.business_id=b.id AND date(a.starts_at AT TIME ZONE b.timezone)=date(now() AT TIME ZONE b.timezone)
+                 AND a.status='pending_confirmation') AS pending_today,
+              (SELECT count(*)::int FROM customers c WHERE c.business_id=b.id) AS customer_count,
+              (SELECT count(*)::int FROM conversations c WHERE c.business_id=b.id AND c.state='needs_owner') AS needs_reply_count
+             FROM businesses b WHERE b.id=$1`,
+            [session.businessId],
+          );
+          return result.rows[0] || null;
+        });
+        send(response, 200, { dashboard });
+        return true;
+      }
+
+      if (pathname === '/api/customers' && request.method === 'GET') {
+        const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => (
+          client.query(
+            `SELECT c.id,c.display_name,c.phone_number,c.notes,c.tags,c.created_at,
+              count(a.id)::int AS visits,
+              COALESCE(sum(CASE WHEN a.status IN ('confirmed','completed') THEN s.price_minor ELSE 0 END),0)::bigint AS spent_minor,
+              max(a.starts_at) AS last_visit
+             FROM customers c
+             LEFT JOIN bookings a ON a.business_id=c.business_id AND a.customer_id=c.id
+             LEFT JOIN services s ON s.business_id=a.business_id AND s.id=a.service_id
+             WHERE c.business_id=$1 GROUP BY c.id ORDER BY c.display_name LIMIT 500`,
+            [session.businessId],
+          )
+        ));
+        send(response, 200, { customers: result.rows });
+        return true;
+      }
+
+      const customerPath = pathname.match(/^\/api\/customers\/([0-9a-f-]{36})$/i);
+      if (customerPath && request.method === 'GET') {
+        const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => {
+          const customer = await client.query(
+            `SELECT c.id,c.display_name,c.phone_number,c.notes,c.tags,c.created_at,
+              count(a.id)::int AS visits,
+              COALESCE(sum(CASE WHEN a.status IN ('confirmed','completed') THEN s.price_minor ELSE 0 END),0)::bigint AS spent_minor,
+              max(a.starts_at) AS last_visit
+             FROM customers c
+             LEFT JOIN bookings a ON a.business_id=c.business_id AND a.customer_id=c.id
+             LEFT JOIN services s ON s.business_id=a.business_id AND s.id=a.service_id
+             WHERE c.business_id=$1 AND c.id=$2 GROUP BY c.id`,
+            [session.businessId, customerPath[1]],
+          );
+          if (!customer.rows[0]) throw new HttpError(404, 'Customer not found.', 'customer_not_found');
+          const bookings = await client.query(
+            `SELECT a.id,a.customer_id,a.service_name,a.starts_at,a.status,s.price_minor
+             FROM bookings a LEFT JOIN services s ON s.business_id=a.business_id AND s.id=a.service_id
+             WHERE a.business_id=$1 AND a.customer_id=$2 ORDER BY a.starts_at DESC LIMIT 100`,
+            [session.businessId, customerPath[1]],
+          );
+          return { customer: customer.rows[0], bookings: bookings.rows };
+        });
+        send(response, 200, result);
+        return true;
+      }
+
+      if (customerPath && request.method === 'PUT') {
+        const body = await readBody(request);
+        const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 5000) : '';
+        if (body.tags !== undefined && (!Array.isArray(body.tags) || body.tags.length > 20
+          || body.tags.some((tag) => typeof tag !== 'string' || !tag.trim() || tag.length > 32))) {
+          validation('Customer tags must contain up to 20 labels of 1 to 32 characters.');
+        }
+        const tags = (body.tags || []).map((tag) => tag.trim());
+        const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client, role) => {
+          if (!['owner', 'manager', 'staff'].includes(role)) throw new HttpError(403, 'You do not have permission to edit customers.', 'insufficient_role');
+          return client.query(
+            'UPDATE customers SET notes=$3,tags=$4::jsonb,updated_at=now() WHERE business_id=$1 AND id=$2 RETURNING id,notes,tags',
+            [session.businessId, customerPath[1], notes, JSON.stringify(tags)],
+          );
+        });
+        if (!result.rowCount) throw new HttpError(404, 'Customer not found.', 'customer_not_found');
+        send(response, 200, { customer: result.rows[0] });
+        return true;
+      }
+
       if (pathname === '/api/conversations' && request.method === 'GET') {
         const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => (
           client.query(
@@ -562,11 +649,15 @@ function createApiHandler(config, pool, options = {}) {
         const result = await withAuthorizedBusiness(pool, session.sub, session.businessId, async (client) => (
           client.query(
             `SELECT b.id,b.customer_id,b.service_id,b.service_name,b.staff_key,b.starts_at,b.ends_at,
-              b.timezone,b.status,b.customer_confirmed_at,
+              b.timezone,b.status,b.customer_confirmed_at,b.reminder_opt_in_at,
+              cu.display_name AS customer_name,cu.phone_number,s.price_minor,
               COALESCE(json_agg(json_build_object('recipientType',r.recipient_type,'status',r.status,'scheduledAt',r.scheduled_at,'sentAt',r.sent_at,'errorCode',r.error_code))
                 FILTER (WHERE r.id IS NOT NULL),'[]') AS reminders
-             FROM bookings b LEFT JOIN reminder_jobs r ON r.business_id=b.business_id AND r.booking_id=b.id
-             WHERE b.business_id=$1 GROUP BY b.id ORDER BY b.starts_at LIMIT 200`,
+             FROM bookings b
+             JOIN customers cu ON cu.business_id=b.business_id AND cu.id=b.customer_id
+             LEFT JOIN services s ON s.business_id=b.business_id AND s.id=b.service_id
+             LEFT JOIN reminder_jobs r ON r.business_id=b.business_id AND r.booking_id=b.id
+             WHERE b.business_id=$1 GROUP BY b.id,cu.id,s.id ORDER BY b.starts_at LIMIT 200`,
             [session.businessId],
           )
         ));

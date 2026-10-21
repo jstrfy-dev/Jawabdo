@@ -4,18 +4,30 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Chip, Button, EmptyState } from '../ui/kit';
 import { useTheme } from '../ui/theme';
 import { useStore } from '../store/store';
+import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
  
 const FILTERS = ['All', 'Needs owner', 'AI replied', 'Owner replied'];
  
 export default function InboxScreen({ navigation }) {
   const t = useTheme();
-  const { threads, flagForOwner, updateBookingStatus, dataMode } = useStore();
+  const store = useStore();
+  const { session } = useAuth();
+  const cloud = useCloudData();
+  const live = Boolean(session);
+  const threads = live ? cloud.conversations : store.threads;
+  const dataMode = live ? 'cloud' : store.dataMode;
+  const filters = live ? ['All', 'Needs owner', 'Owner handling', 'Open'] : FILTERS;
+  const flagForOwner = store.flagForOwner;
+  const updateBookingStatus = store.updateBookingStatus;
   const [filter, setFilter] = useState('All');
  
   const list = useMemo(() => {
     const all = threads || [];
     if (filter === 'AI replied') return all.filter((th) => th.state === 'AI replied');
     if (filter === 'Needs owner') return all.filter((th) => th.state === 'Flagged');
+    if (filter === 'Open') return all.filter((th) => th.state === 'Open');
+    if (filter === 'Owner handling') return all.filter((th) => th.state === 'Owner handling');
     if (filter === 'Owner replied') return all.filter((th) => th.state === 'Owner replied' || th.state === 'Owner handling');
     return all;
   }, [threads, filter]);
@@ -30,9 +42,11 @@ export default function InboxScreen({ navigation }) {
   const badge = (state) =>
     state === 'Flagged'
       ? { label: 'Needs owner', color: t.warning, icon: 'alert-circle' }
+      : state === 'Closed'
+        ? { label: 'Closed', color: t.textMuted, icon: 'checkmark-circle-outline' }
       : state === 'Owner handling' || state === 'Owner replied'
         ? { label: 'Owner replying', color: t.accent, icon: 'person' }
-        : { label: 'AI sample', color: t.accent, icon: 'sparkles' };
+        : { label: live ? 'Open' : 'AI sample', color: t.accent, icon: live ? 'chatbubble-outline' : 'sparkles' };
  
   const act = (thread, action) => {
     if (!thread) return;
@@ -49,26 +63,34 @@ export default function InboxScreen({ navigation }) {
             <Text style={s.caption}>{needReply > 0 ? needReply + ' need your reply' : 'Aapke customer chats'}</Text>
           </View>
           <Pressable onPress={() => navigation.navigate('Settings')} accessibilityLabel="WhatsApp connection status" style={s.connection}>
-            <View style={s.offlineDot} />
-            <Text style={s.connectionText}>Demo</Text>
+            <View style={[s.offlineDot, live && cloud.connection?.status === 'connected' && { backgroundColor: t.accent }]} />
+            <Text style={s.connectionText}>{live ? (cloud.connection?.status === 'connected' ? 'Connected' : 'Not connected') : 'Demo'}</Text>
           </Pressable>
         </View>
 
         <View style={s.notice}>
           <Ionicons name="information-circle-outline" size={17} color={t.warning} />
-          <Text style={s.noticeText}>{dataMode === 'demo' ? 'Yeh sample chats hain. WhatsApp connected nahi; replies sirf local demo mein rehte hain.' : 'WhatsApp connected nahi. Messages yahan send nahi honge.'}</Text>
+          <Text style={s.noticeText}>{live
+            ? cloud.connection?.status === 'connected'
+              ? 'Server par receive hui conversations yahan dikhengi. Is app se manual replies send nahi hote.'
+              : `WhatsApp connected nahi. ${cloud.databaseDriver === 'mysql' ? 'MySQL runtime mein integration configure nahi hai.' : 'Backend connection set up nahi hai.'}`
+            : dataMode === 'demo' ? 'Yeh sample chats hain. WhatsApp connected nahi; replies sirf local demo mein rehte hain.' : 'WhatsApp connected nahi. Messages yahan send nahi honge.'}</Text>
         </View>
+        {live && cloud.loading ? <Text style={s.noticeText}>Conversations load ho rahi hain...</Text> : null}
+        {live && cloud.error ? <><Text style={[s.noticeText, { color: t.danger }]}>{cloud.error}</Text><Button label="Dobara load karein" variant="ghost" onPress={() => cloud.refresh()} /></> : null}
         <View style={s.chips}>
-          {FILTERS.map((f) => (
+          {filters.map((f) => (
             <Chip key={f} label={f} active={filter === f} onPress={() => setFilter(f)} />
           ))}
         </View>
  
-        {list.length === 0 ? (
+        {list.length === 0 && live && (cloud.loading || cloud.error) ? null : list.length === 0 ? (
           <EmptyState
             icon="chatbubbles-outline"
             title="No conversations here"
-            line={filter === 'All' ? 'Abhi chat nahi hai. WhatsApp connect hone ke baad customer chats yahan dikhengi.' : 'Is filter mein koi chat nahi.'}
+            line={live
+              ? 'Is MySQL runtime mein WhatsApp integration configure nahi; koi live customer message receive ya send nahi ho raha.'
+              : filter === 'All' ? 'Abhi chat nahi hai. WhatsApp connect hone ke baad customer chats yahan dikhengi.' : 'Is filter mein koi chat nahi.'}
           />
         ) : (
           <>
@@ -89,7 +111,7 @@ export default function InboxScreen({ navigation }) {
                 </View>
               </View>
               <Text style={s.preview} numberOfLines={2}>{hero.last}</Text>
-              <View style={s.actions}>
+              {!live && <View style={s.actions}>
                 <View style={{ flex: 1 }}>
                   <Button label="Confirm" onPress={() => act(hero, 'Confirmed')} />
                 </View>
@@ -99,8 +121,8 @@ export default function InboxScreen({ navigation }) {
                 <View style={{ flex: 1, marginLeft: 8 }}>
                   <Button label="Cancel" variant="ghost" onPress={() => act(hero, 'Cancelled')} />
                 </View>
-              </View>
-              <Button label="Chat kholen aur jawab dein" icon="chatbubble-ellipses-outline" variant="ghost" onPress={() => navigation.navigate('Conversation', { threadId: hero.id })} />
+              </View>}
+              <Button label={live ? 'Conversation details kholen' : 'Chat kholen aur jawab dein'} icon="chatbubble-ellipses-outline" variant="ghost" onPress={() => navigation.navigate('Conversation', { threadId: hero.id })} />
             </View>
  
             {rest.map((th) => {

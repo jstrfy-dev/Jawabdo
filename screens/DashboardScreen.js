@@ -4,12 +4,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, RingProgress, Button } from '../ui/kit';
 import { useTheme } from '../ui/theme';
 import { useStore } from '../store/store';
+import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
  
 const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
  
 export default function DashboardScreen({ navigation }) {
   const t = useTheme();
-  const { ready, business, bookings, customers, threads, dataMode, storageError } = useStore();
+  const store = useStore();
+  const { session } = useAuth();
+  const cloud = useCloudData();
+  const live = Boolean(session);
+  const ready = live ? !cloud.loading : store.ready;
+  const business = live ? cloud.dashboard?.business : store.business;
+  const bookings = live ? cloud.bookings : store.bookings;
+  const customers = live ? cloud.customers : store.customers;
+  const threads = live ? cloud.conversations : store.threads;
+  const dataMode = live ? 'cloud' : store.dataMode;
+  const storageError = live ? cloud.error : store.storageError;
  
   const today = new Date();
   const dayLabel = DAYS[today.getDay()] + ', TODAY';
@@ -26,14 +38,16 @@ export default function DashboardScreen({ navigation }) {
   const isStatus = (b, key) => String((b && b.status) || '').toLowerCase() === key;
   const confirmed = todays.filter((b) => isStatus(b, 'confirmed')).length;
   const pending = todays.filter((b) => isStatus(b, 'pending')).length;
-  const slots = Number((business && business.slotsPerDay) || 10);
+  const slots = Number((business && business.slotsPerDay) || (live ? 0 : 10));
   const filled = Math.min(slots, confirmed + pending);
   const ratio = slots > 0 ? Math.min(1, filled / slots) : 0;
  
   const revenue = todays.filter((b) => ['confirmed', 'pending'].includes(String(b.status || '').toLowerCase()))
     .reduce((n, b) => n + (Number(b.amount) || 0), 0);
   const revenueLabel = 'Rs ' + revenue.toLocaleString('en-PK');
-  const waiting = (threads || []).filter((thread) => thread.state === 'Flagged').length;
+  const waiting = live
+    ? Number(cloud.dashboard?.needs_reply_count || 0)
+    : (threads || []).filter((thread) => thread.state === 'Flagged').length;
  
   const timeOf = (iso) => {
     const d = iso ? new Date(iso) : null;
@@ -62,7 +76,7 @@ export default function DashboardScreen({ navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={s.eyebrow}>{dayLabel}</Text>
           <Text style={s.title} numberOfLines={2}>Assalam-o-Alaikum! Aaj aapke business ka kya haal hai?</Text>
-          <Text style={s.sub} numberOfLines={1}>{(business && business.name ? business.name : 'Glow Salon') + ', ' + (business && business.area ? business.area : 'Gulberg')}</Text>
+          <Text style={s.sub} numberOfLines={1}>{business?.name ? `${business.name}${business.address ? `, ${business.address}` : ''}` : live ? 'Business profile unavailable' : 'Glow Salon, Gulberg'}</Text>
         </View>
         <Pressable
           onPress={() => navigation.navigate('Calendar')}
@@ -75,21 +89,23 @@ export default function DashboardScreen({ navigation }) {
 
       <View style={s.demoBanner}>
         <Ionicons name="information-circle-outline" size={18} color={t.warning} />
-        <Text style={s.demoText}>{dataMode === 'demo' ? 'Demo mode: yeh sample records hain, live business data nahi.' : 'Local mode: yeh data isi device par save hai.'}</Text>
+        <Text style={s.demoText}>{live ? `Live business data · ${cloud.databaseDriver === 'mysql' ? 'MySQL' : 'configured'} backend se load hua.` : dataMode === 'demo' ? 'Demo mode: yeh sample records hain, live business data nahi.' : 'Local mode: yeh data isi device par save hai.'}</Text>
       </View>
+      {cloud.loading && live ? <Text style={s.errorText}>Live business data load ho raha hai...</Text> : null}
       {!!storageError && <Text style={s.errorText}>{storageError}</Text>}
+      {!!cloud.error && live ? <Button label="Dobara load karein" variant="ghost" onPress={() => cloud.refresh()} /> : null}
 
       <View style={s.hero}>
         <View style={{ flex: 1 }}>
           <Text style={s.heroLabel}>TODAY'S BOOKINGS</Text>
-          <Text style={s.heroNumber}>{filled}</Text>
+          <Text style={s.heroNumber}>{live ? Number(cloud.dashboard?.confirmed_today || 0) + Number(cloud.dashboard?.pending_today || 0) : filled}</Text>
           <Text style={s.heroSub}>{confirmed + ' confirmed · ' + pending + ' pending'}</Text>
         </View>
         <View style={s.ringWrap}>
           <RingProgress value={ratio} size={108} stroke={9} color={t.accent} track={t.surfaceAlt} />
           <View style={s.ringText}>
-            <Text style={s.ringNumber}>{Math.round(ratio * 100) + '%'}</Text>
-            <Text style={s.ringLabel}>filled</Text>
+            <Text style={s.ringNumber}>{live && !slots ? '—' : Math.round(ratio * 100) + '%'}</Text>
+            <Text style={s.ringLabel}>{live && !slots ? 'capacity n/a' : 'filled'}</Text>
           </View>
         </View>
       </View>
@@ -115,7 +131,7 @@ export default function DashboardScreen({ navigation }) {
         </View>
         <View style={[s.tile, { flex: 1, marginRight: 0 }]}>
           <Text style={s.tileLabel}>CUSTOMERS</Text>
-          <Text style={s.tileValue}>{(customers || []).length}</Text>
+          <Text style={s.tileValue}>{live ? Number(cloud.dashboard?.customer_count || 0) : (customers || []).length}</Text>
           <Text style={s.metricHelp}>Saved customer profiles</Text>
         </View>
       </View>
@@ -124,13 +140,13 @@ export default function DashboardScreen({ navigation }) {
       <View style={s.actions}>
         <Button label="Bookings dekhein" icon="calendar-outline" variant="ghost" onPress={() => navigation.navigate('Calendar')} />
         <Button label="Inbox kholen" icon="chatbubbles-outline" variant="ghost" onPress={() => navigation.navigate('Inbox')} />
-        <Button label="Service add / edit karein" icon="pricetag-outline" variant="ghost" onPress={() => navigation.navigate('Assistant')} />
+        <Button label="Service add / edit karein" icon="pricetag-outline" variant="ghost" onPress={() => navigation.navigate(live ? 'CloudBusiness' : 'Assistant')} />
         <Button label="Customers dekhein" icon="people-outline" variant="ghost" onPress={() => navigation.navigate('CustomerList')} />
         <Button label="WhatsApp setup" icon="logo-whatsapp" variant="ghost" onPress={() => navigation.navigate('Settings')} />
       </View>
  
       <Text style={s.sectionLabel}>TODAY</Text>
-      {todays.length === 0 ? (
+      {todays.length === 0 && live && (cloud.loading || cloud.error) ? null : todays.length === 0 ? (
         <View style={s.emptyCard}>
           <View style={s.emptyIcon}><Ionicons name="calendar-outline" size={22} color={t.accent} /></View>
           <Text style={s.emptyTitle}>No bookings today</Text>

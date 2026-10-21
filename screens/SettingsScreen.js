@@ -4,11 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Button } from '../ui/kit';
 import { useTheme, useSetTheme } from '../ui/theme';
 import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
 
 export default function SettingsScreen({ navigation }) {
   const t = useTheme();
   const setTheme = useSetTheme();
   const { session, demoMode, switchToAccount, signOut } = useAuth();
+  const cloud = useCloudData();
+  const whatsappConnected = cloud.connection?.status === 'connected';
   const s = styles(t);
   const plans = [
     { name: 'Starter', price: 'Rs. 3,000 / month', detail: 'Features aur limits abhi confirm karna baqi' },
@@ -19,7 +22,7 @@ export default function SettingsScreen({ navigation }) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
         <Text style={s.eyebrow}>AAPKA ACCOUNT</Text>
         <Text style={s.title}>Settings</Text>
-        <Text style={s.subtitle}>Abhi yeh app local demo data use karti hai; server backend app ke saath connect nahi.</Text>
+        <Text style={s.subtitle}>{session ? 'Business data authenticated backend se load hota hai. Demo mode alag aur local hai.' : 'Demo data local hai; sign in karke backend business account use karein.'}</Text>
 
         <View style={s.card}>
           <Text style={s.cardTitle}>{session ? 'Cloud account' : 'Account aur cloud data'}</Text>
@@ -41,15 +44,19 @@ export default function SettingsScreen({ navigation }) {
             <View style={[s.icon, { backgroundColor: t.accentSoft }]}><Ionicons name="logo-whatsapp" size={20} color={t.accent} /></View>
             <View style={{ flex: 1 }}>
               <Text style={s.cardTitle}>WhatsApp Business</Text>
-              <Text style={s.muted}>Connected nahi · demo mode</Text>
+              <Text style={s.muted}>{whatsappConnected ? `Connected · ${cloud.connection.display_phone_number || 'server reported'}` : 'Connected nahi · live WhatsApp integration zaroori hai'}</Text>
             </View>
             <View style={s.badge}><Text style={s.badgeText}>SETUP REQUIRED</Text></View>
           </View>
-          <Text style={s.body}>Multi-business Node/PostgreSQL backend foundation alag maujood hai, lekin app login aur official Meta Embedded Signup screen abhi wired nahi. Is liye real WhatsApp connected nahi aur customer traffic enable na karein.</Text>
+          <Text style={s.body}>{whatsappConnected
+            ? 'Backend WhatsApp connection ko connected report karta hai. Is screen se manual messages send nahi hote; server integration customer traffic handle karti hai.'
+            : cloud.databaseDriver === 'mysql'
+              ? 'MySQL backend mein official Meta WhatsApp integration configured nahi. Is liye real WhatsApp connected nahi, aur yahan se customer messages ya reminders nahi bheje jaate.'
+              : 'Backend mein real WhatsApp connection configured nahi. Customer messages ya reminders send nahi kiye ja rahe.'}</Text>
           <Button label="Setup guide dekhein" variant="ghost" onPress={() => navigation.navigate('Guide')} />
         </View>
 
-        <View style={s.card}>
+        {!session && <View style={s.card}>
           <Text style={s.cardTitle}>Plan aur billing</Text>
           <Text style={s.muted}>14 din ka trial offer · abhi start nahi hua, payment provider connected nahi</Text>
           {plans.map((plan) => (
@@ -62,12 +69,12 @@ export default function SettingsScreen({ navigation }) {
             </View>
           ))}
           <Text style={s.note}>Yeh sirf dikhaye gaye plan rates hain. Features/limits abhi confirm karna baqi hain. Koi subscription ya payment activate/verify nahi hui.</Text>
-        </View>
+        </View>}
 
         <View style={s.card}>
           <Text style={s.cardTitle}>Zubaan aur display</Text>
           <Text style={s.muted}>Customer reply ki zubaan Assistant settings mein badlein.</Text>
-          <Button label="Business profile aur hours edit karein" icon="storefront-outline" variant="ghost" onPress={() => navigation.navigate('Onboarding')} />
+          <Button label="Business profile aur hours edit karein" icon="storefront-outline" variant="ghost" onPress={() => navigation.navigate(session ? 'CloudBusiness' : 'Onboarding')} />
           <Pressable onPress={() => setTheme(t.dark ? 'paper' : 'forest')} style={s.settingRow} accessibilityRole="button">
             <Ionicons name={t.dark ? 'sunny-outline' : 'moon-outline'} size={19} color={t.accent} />
             <Text style={s.settingText}>{t.dark ? 'Light theme lagayein' : 'Dark theme lagayein'}</Text>
@@ -91,7 +98,7 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={s.card}>
           <Text style={s.cardTitle}>Privacy aur data</Text>
-          <Text style={s.body}>Demo records is device ke local storage mein rehte hain. App cloud sync, customer privacy controls aur account deletion flow abhi configure nahi; production data use na karein.</Text>
+          <Text style={s.body}>{session ? 'Business records configured backend database mein store hote hain. Production customer traffic se pehle consent, retention, privacy policy aur account deletion workflows ko review karein.' : 'Demo records is device ke local storage mein rehte hain. Sign in ke baghair koi live business data load nahi hota.'}</Text>
         </View>
       </ScrollView>
     </Screen>

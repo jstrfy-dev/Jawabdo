@@ -4,17 +4,41 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Button } from '../ui/kit';
 import { useTheme } from '../ui/theme';
 import { useStore } from '../store/store';
+import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
 
 export default function ConversationScreen({ route, navigation }) {
   const t = useTheme();
-  const { threads, replyThread, takeOverThread, markThreadRead } = useStore();
+  const store = useStore();
+  const { session } = useAuth();
+  const cloud = useCloudData();
+  const live = Boolean(session);
+  const { replyThread, takeOverThread, markThreadRead } = store;
   const [draft, setDraft] = useState('');
-  const thread = (threads || []).find((item) => item.id === route.params?.threadId);
+  const [liveMessages, setLiveMessages] = useState([]);
+  const [messageError, setMessageError] = useState('');
+  const [messageLoading, setMessageLoading] = useState(false);
+  const threadId = route.params?.threadId;
+  const localThread = (store.threads || []).find((item) => item.id === threadId);
+  const cloudThread = cloud.conversations.find((item) => item.id === threadId);
+  const thread = live ? (cloudThread ? { ...cloudThread, messages: liveMessages } : null) : localThread;
   const s = styles(t);
 
   useEffect(() => {
-    if (thread) markThreadRead(thread.id);
-  }, [thread?.id, markThreadRead]);
+    if (!live && localThread) markThreadRead(localThread.id);
+  }, [live, localThread?.id, markThreadRead]);
+
+  useEffect(() => {
+    if (!live || !threadId) return undefined;
+    let active = true;
+    setMessageLoading(true);
+    setMessageError('');
+    cloud.getConversationMessages(threadId)
+      .then((messages) => { if (active) setLiveMessages(messages); })
+      .catch((error) => { if (active) setMessageError(error.message); })
+      .finally(() => { if (active) setMessageLoading(false); });
+    return () => { active = false; };
+  }, [live, threadId, cloud.getConversationMessages]);
 
   if (!thread) {
     return (
@@ -44,32 +68,40 @@ export default function ConversationScreen({ route, navigation }) {
         </Pressable>
         <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={s.title}>{thread.name}</Text>
-          <Text style={s.muted}>{thread.state} · sample conversation</Text>
+          <Text style={s.muted}>{thread.state}{live && thread.phone ? ` · ${thread.phone}` : live ? ' · server conversation' : ' · sample conversation'}</Text>
         </View>
         <Pressable onPress={() => navigation.navigate('Customers', { customerId: thread.customerId })} accessibilityLabel="Customer profile" style={s.profileLink}>
           <Ionicons name="person-outline" size={18} color={t.accent} />
         </Pressable>
-        <View style={s.demo}><Text style={s.demoText}>DEMO</Text></View>
+        {!live && <View style={s.demo}><Text style={s.demoText}>DEMO</Text></View>}
       </View>
       <View style={s.notice}>
         <Ionicons name="information-circle-outline" size={17} color={t.warning} />
-        <Text style={s.noticeText}>Yeh local sample chat hai. Message WhatsApp par nahi bheja jayega.</Text>
+        <Text style={s.noticeText}>{live ? 'Yeh conversation read-only hai; app se manual WhatsApp replies send karne ka endpoint configured nahi.' : 'Yeh local sample chat hai. Message WhatsApp par nahi bheja jayega.'}</Text>
       </View>
+      {messageLoading && <Text style={s.muted}>Messages load ho rahe hain...</Text>}
+      {!!messageError && <Text style={[s.muted, { color: t.danger }]}>{messageError}</Text>}
       <ScrollView style={s.messages} contentContainerStyle={{ paddingVertical: 12 }} showsVerticalScrollIndicator={false}>
+        {live && thread.messages.length === 0 && !messageLoading
+          ? <Text style={s.muted}>Is conversation ke messages server par maujood nahi.</Text>
+          : null}
         {(thread.messages || []).map((message) => {
           const outgoing = message.from !== 'them';
           return (
             <View key={message.id} style={[s.bubble, outgoing ? s.outgoing : s.incoming]}>
-              <Text style={[s.sender, outgoing && { color: t.accent }]}>{message.from === 'owner' ? 'Aap' : message.from === 'ai' ? 'JawabDo · sample' : thread.name}</Text>
+              <Text style={[s.sender, outgoing && { color: t.accent }]}>{message.from === 'owner' ? 'Aap' : message.from === 'ai' ? (live ? 'JawabDo' : 'JawabDo · sample') : thread.name}</Text>
               <Text style={s.message}>{message.text}</Text>
             </View>
           );
         })}
       </ScrollView>
-      {!ownerHasControl && (
+      {live && !ownerHasControl && thread.state !== 'Closed' && (
+        <Button label="Owner ko conversation assign karein" icon="person-outline" variant="ghost" onPress={() => cloud.setConversationState(thread.id, 'owner_handling').catch((error) => setMessageError(error.message))} />
+      )}
+      {!live && !ownerHasControl && (
         <Button label="Main khud jawab dunga/dungi" icon="person-outline" variant="ghost" onPress={() => takeOverThread(thread.id)} />
       )}
-      {ownerHasControl && (
+      {!live && ownerHasControl && (
         <View style={s.composer}>
           <TextInput value={draft} onChangeText={setDraft} placeholder="Apna jawab likhein..." placeholderTextColor={t.textMuted} style={s.input} multiline />
           <Pressable onPress={send} accessibilityLabel="Send local reply" style={[s.send, !draft.trim() && { opacity: 0.5 }]} disabled={!draft.trim()}>

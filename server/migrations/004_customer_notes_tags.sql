@@ -1,0 +1,3 @@
+ALTER TABLE customers
+  ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS tags jsonb NOT NULL DEFAULT '[]'::jsonb;

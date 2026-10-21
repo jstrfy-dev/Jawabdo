@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Chip, Button, EmptyState } from '../ui/kit';
 import { useTheme } from '../ui/theme';
 import { useStore } from '../store/store';
+import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
 
 const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const toDate = (value) => {
@@ -18,7 +20,14 @@ const isActive = (booking) => !['cancelled', 'completed'].includes(String(bookin
 
 export default function CalendarScreen({ navigation }) {
   const t = useTheme();
-  const { bookings, updateBookingStatus, moveBooking, dataMode } = useStore();
+  const store = useStore();
+  const { session } = useAuth();
+  const cloud = useCloudData();
+  const live = Boolean(session);
+  const bookings = live ? cloud.bookings : store.bookings;
+  const updateBookingStatus = store.updateBookingStatus;
+  const moveBooking = store.moveBooking;
+  const dataMode = live ? 'cloud' : store.dataMode;
   const today = useMemo(() => new Date(), []);
   const week = useMemo(() => getWeek(today), [today]);
   const [day, setDay] = useState(() => dateKey(today));
@@ -54,12 +63,24 @@ export default function CalendarScreen({ navigation }) {
   };
 
   const confirm = (booking) => {
-    updateBookingStatus(booking.id, 'Confirmed');
-    setMessage('Booking demo list mein confirm mark ho gayi.');
+    if (live) {
+      cloud.updateBookingStatus(booking.id, 'confirmed')
+        .then(() => setMessage('Appointment server par confirm ho gayi.'))
+        .catch((error) => setMessage(error.message));
+    } else {
+      updateBookingStatus(booking.id, 'Confirmed');
+      setMessage('Booking demo list mein confirm mark ho gayi.');
+    }
   };
   const cancel = (booking) => {
-    updateBookingStatus(booking.id, 'Cancelled');
-    setMessage('Booking demo list mein cancel mark ho gayi.');
+    if (live) {
+      cloud.updateBookingStatus(booking.id, 'cancelled')
+        .then(() => setMessage('Appointment server par cancel ho gayi.'))
+        .catch((error) => setMessage(error.message));
+    } else {
+      updateBookingStatus(booking.id, 'Cancelled');
+      setMessage('Booking demo list mein cancel mark ho gayi.');
+    }
   };
 
   return (
@@ -70,15 +91,17 @@ export default function CalendarScreen({ navigation }) {
             <Text style={s.title}>Bookings</Text>
             <Text style={s.caption}>Calendar aur appointment list</Text>
           </View>
-          <Pressable onPress={() => navigation.navigate('Onboarding')} style={s.add} accessibilityLabel="Edit opening hours">
+          <Pressable onPress={() => navigation.navigate(live ? 'CloudBusiness' : 'Onboarding')} style={s.add} accessibilityLabel="Edit opening hours">
             <Ionicons name="time-outline" size={20} color={t.onAccent} />
           </Pressable>
         </View>
 
         <View style={s.notice}>
           <Ionicons name="information-circle-outline" size={17} color={t.warning} />
-          <Text style={s.noticeText}>{dataMode === 'demo' ? 'Sample bookings — approvals aur rescheduling sirf is device ke demo data par hain.' : 'Local bookings — server par sync ya double-booking protection configured nahi.'}</Text>
+          <Text style={s.noticeText}>{live ? 'Live appointments backend database se load hoti hain. Rescheduling aur WhatsApp reminders abhi configure nahi hain.' : dataMode === 'demo' ? 'Sample bookings — approvals aur rescheduling sirf is device ke demo data par hain.' : 'Local bookings — server par sync ya double-booking protection configured nahi.'}</Text>
         </View>
+        {live && cloud.loading ? <Text style={s.caption}>Appointments load ho rahi hain...</Text> : null}
+        {live && cloud.error ? <><Text style={[s.message, { color: t.danger }]}>{cloud.error}</Text><Button label="Dobara load karein" variant="ghost" onPress={() => cloud.refresh()} /></> : null}
 
         <View style={s.week}>
           {week.map((date) => {
@@ -106,11 +129,11 @@ export default function CalendarScreen({ navigation }) {
         </View>
 
         <View style={s.staffRow}>
-          {['All staff', 'Sara', 'Noor'].map((name) => <Chip key={name} label={name} active={staff === name} onPress={() => setStaff(name)} />)}
+          {(live ? ['All staff'] : ['All staff', 'Sara', 'Noor']).map((name) => <Chip key={name} label={name} active={staff === name} onPress={() => setStaff(name)} />)}
         </View>
 
         {!!message && <Text style={s.message}>{message}</Text>}
-        {dayBookings.length === 0 ? (
+        {dayBookings.length === 0 && live && (cloud.loading || cloud.error) ? null : dayBookings.length === 0 ? (
           <EmptyState icon="sunny-outline" title="Is din koi booking nahi" body="Naya customer aaye to uski request yahan nazar aayegi." />
         ) : dayBookings.map((booking) => {
           const time = toDate(booking.at);
@@ -129,7 +152,7 @@ export default function CalendarScreen({ navigation }) {
                 {lowerStatus !== 'cancelled' && lowerStatus !== 'completed' && (
                   <View style={s.actions}>
                     {lowerStatus === 'pending' && <Pressable onPress={() => confirm(booking)} style={s.action}><Text style={s.actionText}>Confirm</Text></Pressable>}
-                    <Pressable onPress={() => moveToNextDay(booking)} style={s.action}><Text style={s.actionText}>+1 din move</Text></Pressable>
+                    {!live && <Pressable onPress={() => moveToNextDay(booking)} style={s.action}><Text style={s.actionText}>+1 din move</Text></Pressable>}
                     <Pressable onPress={() => cancel(booking)} style={[s.action, { borderColor: t.danger }]}><Text style={[s.actionText, { color: t.danger }]}>Cancel</Text></Pressable>
                   </View>
                 )}
@@ -140,7 +163,7 @@ export default function CalendarScreen({ navigation }) {
 
         <View style={s.footer}>
           <Text style={s.footerTitle}>{pending.length ? `${pending.length} request${pending.length === 1 ? '' : 's'} aapki approval ka intezar kar rahi hain` : 'Aap sab se updated hain'}</Text>
-          <Text style={s.caption}>Real calendar sync aur safe booking conflicts ke liye shared backend zaroori hai.</Text>
+          <Text style={s.caption}>{live ? 'Appointments aur booking conflicts server par verify hote hain. WhatsApp reminders abhi off hain.' : 'Real calendar sync aur safe booking conflicts ke liye shared backend zaroori hai.'}</Text>
         </View>
       </ScrollView>
     </Screen>

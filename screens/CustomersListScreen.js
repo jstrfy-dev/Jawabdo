@@ -1,13 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, EmptyState } from '../ui/kit';
+import { Screen, Button, EmptyState } from '../ui/kit';
 import { useTheme } from '../ui/theme';
 import { useStore } from '../store/store';
+import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
 
 export default function CustomersListScreen({ navigation }) {
   const t = useTheme();
-  const { customers, dataMode } = useStore();
+  const store = useStore();
+  const { session } = useAuth();
+  const cloud = useCloudData();
+  const live = Boolean(session);
+  const customers = live ? cloud.customers : store.customers;
+  const dataMode = live ? 'cloud' : store.dataMode;
   const [query, setQuery] = useState('');
   const list = useMemo(() => (customers || []).filter((customer) => (
     `${customer.name} ${customer.phone || ''} ${(customer.tags || []).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())
@@ -19,12 +26,14 @@ export default function CustomersListScreen({ navigation }) {
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
         <Text style={s.eyebrow}>RISHTAY, SIRF RECORDS NAHI</Text>
         <Text style={s.title}>Customers</Text>
-        <Text style={s.subtitle}>{dataMode === 'demo' ? 'Sample customer profiles — live contacts nahi.' : 'Is device par saved customer profiles.'}</Text>
+        <Text style={s.subtitle}>{live ? 'Business ke server par saved customer records.' : dataMode === 'demo' ? 'Sample customer profiles — live contacts nahi.' : 'Is device par saved customer profiles.'}</Text>
+        {live && cloud.loading ? <Text style={s.subtitle}>Customers load ho rahe hain...</Text> : null}
+        {live && cloud.error ? <><Text style={[s.subtitle, { color: t.danger }]}>{cloud.error}</Text><Button label="Dobara load karein" variant="ghost" onPress={() => cloud.refresh()} /></> : null}
         <View style={s.search}>
           <Ionicons name="search-outline" size={18} color={t.textMuted} />
           <TextInput value={query} onChangeText={setQuery} placeholder="Naam, phone ya tag dhoondein" placeholderTextColor={t.textMuted} style={s.searchInput} />
         </View>
-        {list.length === 0 ? (
+        {list.length === 0 && live && (cloud.loading || cloud.error) ? null : list.length === 0 ? (
           <EmptyState icon="people-outline" title={query ? 'Koi customer nahi mila' : 'Abhi customer nahi hain'} body={query ? 'Naam ya tag dobara check karein.' : 'WhatsApp se opt-in ke baad customer profiles yahan aa sakti hain.'} />
         ) : list.map((customer) => (
           <Pressable key={customer.id} onPress={() => navigation.navigate('Customers', { customerId: customer.id })} style={({ pressed }) => [s.customer, pressed && { opacity: 0.75 }]}>

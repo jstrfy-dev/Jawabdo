@@ -173,4 +173,51 @@ function readProductionConfig(env = process.env) {
   });
 }
 
-module.exports = { readConfig, readProductionConfig };
+function readMysqlConfig(env = process.env) {
+  const jwtSecret = String(env.JWT_SECRET || '').trim();
+  if (Buffer.byteLength(jwtSecret, 'utf8') < 32) {
+    throw new Error('JWT_SECRET must be at least 32 bytes. Generate a random secret locally.');
+  }
+
+  const port = Number(env.PORT || 3000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('PORT must be a valid TCP port.');
+  }
+
+  const databasePort = Number(env.MYSQL_PORT || env.DB_PORT || 3306);
+  if (!Number.isInteger(databasePort) || databasePort < 1 || databasePort > 65535) {
+    throw new Error('MYSQL_PORT must be a valid TCP port.');
+  }
+  const databaseHost = String(env.MYSQL_HOST || env.DB_HOST || '127.0.0.1').trim();
+  const databaseName = String(env.MYSQL_DATABASE || env.DB_NAME || 'jawabdo').trim();
+  const databaseUser = String(env.MYSQL_USER || env.DB_USER || 'root').trim();
+  if (!databaseHost || !databaseName || databaseName.length > 64 || !databaseUser) {
+    throw new Error('MYSQL_HOST, MYSQL_DATABASE, and MYSQL_USER must be valid non-empty values.');
+  }
+
+  const origins = String(env.CORS_ORIGINS || 'http://localhost:8081,http://127.0.0.1:8081')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  for (const origin of origins) {
+    let parsed;
+    try { parsed = new URL(origin); } catch { throw new Error('Every CORS_ORIGINS entry must be an origin URL.'); }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      throw new Error('CORS_ORIGINS entries must be plain HTTP(S) origins without a path.');
+    }
+  }
+
+  return Object.freeze({
+    databaseHost,
+    databasePort,
+    databaseName,
+    databaseUser,
+    databasePassword: String(env.MYSQL_PASSWORD ?? env.DB_PASSWORD ?? ''),
+    jwtSecret,
+    port,
+    nodeEnv: String(env.NODE_ENV || 'development'),
+    corsOrigins: origins,
+  });
+}
+
+module.exports = { readConfig, readProductionConfig, readMysqlConfig };

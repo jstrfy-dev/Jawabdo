@@ -210,7 +210,7 @@ export default function CloudBusinessScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.eyebrow}>SERVER-SAVED BUSINESS</Text>
         <Text style={styles.title}>Business setup</Text>
-        <Text style={styles.muted}>Yeh profile, services aur FAQs authenticated business ke backend par save hote hain. Existing dashboard/inbox/calendar abhi local demo hi hain.</Text>
+        <Text style={styles.muted}>Business profile, services aur FAQs authenticated business ke backend par save hote hain. Dashboard, inbox, calendar aur customer records bhi server se load hote hain.</Text>
 
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {notice ? <Text accessibilityRole="status" style={styles.success}>{notice}</Text> : null}

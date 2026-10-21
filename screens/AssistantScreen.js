@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Button, Chip } from '../ui/kit';
+import { Screen, Button, Chip, EmptyState } from '../ui/kit';
 import { useTheme } from '../ui/theme';
 import { useStore } from '../store/store';
+import { useAuth } from '../auth/AuthContext';
 
 const LANGUAGES = [
   { label: 'English', value: 'en' },
@@ -47,7 +48,89 @@ function makePreviewReply(question, business) {
   return 'Is sawal ka verified jawab abhi mere paas nahi. Main owner se confirm karke aapko batata hoon.';
 }
 
-export default function AssistantScreen({ navigation }) {
+export default function AssistantScreen(props) {
+  const { session } = useAuth();
+  return session ? <CloudAssistantScreen {...props} /> : <DemoAssistantScreen {...props} />;
+}
+
+function CloudAssistantScreen({ navigation }) {
+  const t = useTheme();
+  const { session, api } = useAuth();
+  const [services, setServices] = useState([]);
+  const [faqs, setFaqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      api.getServices(session.accessToken),
+      api.getFaqs(session.accessToken),
+    ]).then(([serviceResult, faqResult]) => {
+      if (active) {
+        setServices(serviceResult.services || []);
+        setFaqs(faqResult.faqs || []);
+      }
+    }).catch((requestError) => {
+      if (active) setError(requestError.message);
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [api, session.accessToken, retryCount]);
+
+  const styles = liveStyles(t);
+  return (
+    <Screen>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        <Text style={styles.eyebrow}>BUSINESS KNOWLEDGE</Text>
+        <Text style={styles.title}>Services aur verified FAQs</Text>
+        <Text style={styles.caption}>Yahan aapke authenticated business ke server par saved facts hain. Demo sample data live account mein nahi dikhaya jata.</Text>
+        <View style={styles.notice}>
+          <Ionicons name="information-circle-outline" size={18} color={t.warning} />
+          <Text style={styles.noticeText}>Saved details customer ko automatically send nahi hoti. Live replies ke liye server-side assistant aur WhatsApp integration ko configure karna zaroori hai.</Text>
+        </View>
+        {loading ? <Text style={styles.caption}>Services aur FAQs load ho rahe hain...</Text> : null}
+        {!!error && <><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Button label="Dobara load karein" variant="ghost" onPress={() => { setLoading(true); setError(''); setRetryCount((value) => value + 1); }} /></>}
+        {!loading && !error && services.length === 0 && faqs.length === 0
+          ? <EmptyState icon="sparkles-outline" title="Business knowledge abhi khaali hai" body="Apne cloud profile mein services, prices aur verified FAQs add karein." />
+          : null}
+        {services.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.section}>Services and prices</Text>
+            {services.map((service) => (
+              <View key={service.id} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{service.name}</Text>
+                  {!!service.description && <Text style={styles.caption}>{service.description}</Text>}
+                  <Text style={styles.caption}>{service.duration_minutes} min · {service.active ? 'Active' : 'Inactive'}</Text>
+                </View>
+                <Text style={styles.price}>{service.price_minor == null ? 'Price not set' : `${service.currency} ${(Number(service.price_minor) / 100).toLocaleString()}`}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        {faqs.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.section}>Verified FAQs</Text>
+            {faqs.map((faq) => (
+              <View key={faq.id} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{faq.question}</Text>
+                  <Text style={styles.caption}>{faq.answer}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+        <Button label="Business profile, services aur FAQs edit karein" icon="create-outline" onPress={() => navigation.navigate('CloudBusiness')} />
+      </ScrollView>
+    </Screen>
+  );
+}
+
+function DemoAssistantScreen({ navigation }) {
   const t = useTheme();
   const { business, saveBusiness, dataMode } = useStore();
   const [draft, setDraft] = useState('');
@@ -114,7 +197,7 @@ export default function AssistantScreen({ navigation }) {
           <View style={s.chips}>
             {TONES.map((tone) => <Chip key={tone} label={tone} active={(details.assistantTone || 'Friendly') === tone} onPress={() => update('assistantTone', tone)} />)}
           </View>
-          <Button label="Opening hours aur setup edit karein" icon="time-outline" variant="ghost" onPress={() => navigation.navigate('Onboarding')} />
+          <Button label="Opening hours aur setup edit karein" icon="time-outline" variant="ghost" onPress={() => navigation.navigate('CloudBusiness')} />
         </View>
 
         <View style={s.card}>
@@ -179,6 +262,21 @@ export default function AssistantScreen({ navigation }) {
     </Screen>
   );
 }
+
+const liveStyles = (t) => StyleSheet.create({
+  content: { paddingBottom: 34 },
+  eyebrow: { color: t.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1.3, marginTop: 8 },
+  title: { color: t.text, fontSize: 25, lineHeight: 32, fontWeight: '800', marginTop: 5 },
+  caption: { color: t.textMuted, fontSize: 13, lineHeight: 19, marginTop: 5 },
+  notice: { flexDirection: 'row', alignItems: 'flex-start', padding: 13, borderRadius: 15, backgroundColor: t.warning + '18', marginVertical: 14 },
+  noticeText: { flex: 1, color: t.text, fontSize: 12, lineHeight: 18, marginLeft: 8 },
+  error: { color: t.danger, fontSize: 13, lineHeight: 19, marginVertical: 10 },
+  card: { backgroundColor: t.surface, borderRadius: 18, padding: 16, marginBottom: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border },
+  section: { color: t.text, fontSize: 17, fontWeight: '700', marginBottom: 7 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border, paddingVertical: 11 },
+  name: { color: t.text, fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  price: { color: t.accent, fontSize: 12, fontWeight: '700', marginLeft: 8 },
+});
 
 const styles = (t) => StyleSheet.create({
   content: { paddingBottom: 34 },

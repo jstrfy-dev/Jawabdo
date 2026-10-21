@@ -4,21 +4,52 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Button, Chip, EmptyState } from '../ui/kit';
 import { useTheme } from '../ui/theme';
 import { useStore } from '../store/store';
+import { useAuth } from '../auth/AuthContext';
+import { useCloudData } from '../auth/CloudDataContext';
 
 const TAG_OPTIONS = ['VIP', 'Bridal', 'Prefers Urdu', 'Follow-up'];
 
 export default function CustomersScreen({ navigation, route }) {
   const t = useTheme();
-  const { customers, bookings, addCustomerNote, setCustomerTags, dataMode } = useStore();
+  const store = useStore();
+  const { session } = useAuth();
+  const cloud = useCloudData();
+  const live = Boolean(session);
+  const { addCustomerNote, setCustomerTags } = store;
   const [note, setNote] = useState('');
   const [notice, setNotice] = useState('');
-  const customer = (customers || []).find((item) => item.id === route.params?.customerId);
-  const history = (bookings || []).filter((booking) => booking.customerId === customer?.id).sort((a, b) => new Date(b.at) - new Date(a.at));
+  const [cloudProfile, setCloudProfile] = useState(null);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const customerId = route.params?.customerId;
+  const localCustomer = (store.customers || []).find((item) => item.id === customerId);
+  const customer = live ? (cloudProfile?.customer || cloud.customers.find((item) => item.id === customerId)) : localCustomer;
+  const history = live
+    ? (cloudProfile?.bookings || [])
+    : (store.bookings || []).filter((booking) => booking.customerId === customer?.id).sort((a, b) => new Date(b.at) - new Date(a.at));
   const s = styles(t);
+
+  useEffect(() => {
+    if (!live || !customerId) return undefined;
+    let active = true;
+    setCloudLoading(true);
+    cloud.getCustomer(customerId)
+      .then((profile) => { if (active) setCloudProfile(profile); })
+      .catch((error) => { if (active) setNotice(error.message); })
+      .finally(() => { if (active) setCloudLoading(false); });
+    return () => { active = false; };
+  }, [live, customerId, cloud.getCustomer]);
 
   useEffect(() => {
     setNote(customer?.notes || '');
   }, [customer?.id, customer?.notes]);
+
+  if (live && cloudLoading && !customer) {
+    return <Screen><EmptyState icon="hourglass-outline" title="Customer load ho raha hai" body="Server se profile hasil ki ja rahi hai." /></Screen>;
+  }
+
+  if (live && cloud.error && !customer) {
+    return <Screen><EmptyState icon="cloud-offline-outline" title="Customer data load nahi hua" body={cloud.error} actionLabel="Dobara koshish karein" onAction={() => cloud.getCustomer(customerId).then(setCloudProfile).catch((error) => setNotice(error.message))} /></Screen>;
+  }
 
   if (!customer) {
     return (
@@ -30,11 +61,27 @@ export default function CustomersScreen({ navigation, route }) {
 
   const toggleTag = (tag) => {
     const current = customer.tags || [];
-    setCustomerTags(customer.id, current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag]);
+    const tags = current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag];
+    if (live) {
+      cloud.updateCustomer(customer.id, { notes: customer.notes || '', tags })
+        .then((result) => setCloudProfile((profile) => profile ? { ...profile, customer: { ...profile.customer, ...result } } : profile))
+        .catch((error) => setNotice(error.message));
+    } else {
+      setCustomerTags(customer.id, tags);
+    }
   };
   const saveNote = () => {
-    addCustomerNote(customer.id, note.trim());
-    setNotice('Note isi device par save ho gaya.');
+    if (live) {
+      cloud.updateCustomer(customer.id, { notes: note.trim(), tags: customer.tags || [] })
+        .then((result) => {
+          setCloudProfile((profile) => profile ? { ...profile, customer: { ...profile.customer, ...result } } : profile);
+          setNotice('Customer note server par save ho gaya.');
+        })
+        .catch((error) => setNotice(error.message));
+    } else {
+      addCustomerNote(customer.id, note.trim());
+      setNotice('Note isi device par save ho gaya.');
+    }
   };
   const lastVisit = customer.lastVisit ? new Date(customer.lastVisit).toLocaleDateString() : 'Maloom nahi';
 
@@ -47,7 +94,7 @@ export default function CustomersScreen({ navigation, route }) {
           </Pressable>
           <View style={{ flex: 1, marginLeft: 9 }}>
             <Text style={s.title}>Customer profile</Text>
-            <Text style={s.caption}>{dataMode === 'demo' ? 'Sample customer · demo mode' : 'Is device ka customer record'}</Text>
+            <Text style={s.caption}>{live ? 'Server business record' : store.dataMode === 'demo' ? 'Sample customer · demo mode' : 'Is device ka customer record'}</Text>
           </View>
         </View>
         <View style={s.card}>

@@ -68,6 +68,7 @@ describe('backend API route handling', () => {
       embeddedSignupConfigId: null,
       graphApiVersion: null,
       signupVersion: 'v4',
+      databaseDriver: 'postgres',
     });
   });
 
