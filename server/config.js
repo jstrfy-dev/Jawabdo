@@ -9,6 +9,37 @@ const REQUIRED_VARIABLES = [
 ];
 
 const PRODUCTION_REQUIRED_VARIABLES = ['DATABASE_URL', 'JWT_SECRET', 'ENCRYPTION_KEY'];
+const LOCAL_DEVELOPMENT_ORIGINS = ['http://localhost:8081', 'http://127.0.0.1:8081'];
+
+function isLocalDatabaseHost(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost'
+    || host.endsWith('.localhost')
+    || host === '::1'
+    || host === '0.0.0.0'
+    || /^127\./.test(host);
+}
+
+function readCorsOrigins(value, nodeEnv) {
+  const configured = String(value || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const origins = nodeEnv === 'production'
+    ? configured
+    : [...configured, ...LOCAL_DEVELOPMENT_ORIGINS];
+  for (const origin of origins) {
+    let parsed;
+    try { parsed = new URL(origin); } catch { throw new Error('Every CORS_ORIGINS entry must be an origin URL.'); }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      throw new Error('CORS_ORIGINS entries must be plain HTTP(S) origins without a path.');
+    }
+    if (nodeEnv === 'production' && parsed.protocol !== 'https:') {
+      throw new Error('CORS_ORIGINS must use HTTPS in production.');
+    }
+  }
+  return [...new Set(origins)];
+}
 
 function readConfig(env = process.env) {
   const missing = REQUIRED_VARIABLES.filter((name) => !String(env[name] || '').trim());
@@ -66,6 +97,7 @@ function readProductionConfig(env = process.env) {
   const missing = PRODUCTION_REQUIRED_VARIABLES.filter((name) => !String(env[name] || '').trim());
   if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
 
+  const nodeEnv = String(env.NODE_ENV || 'production');
   const jwtSecret = String(env.JWT_SECRET).trim();
   if (Buffer.byteLength(jwtSecret, 'utf8') < 32) {
     throw new Error('JWT_SECRET must be at least 32 bytes. Generate a random secret locally.');
@@ -89,6 +121,13 @@ function readProductionConfig(env = process.env) {
   }
   if (!['postgres:', 'postgresql:'].includes(databaseUrl.protocol)) {
     throw new Error('DATABASE_URL must use PostgreSQL.');
+  }
+  const databaseSsl = String(env.DATABASE_SSL || '').trim().toLowerCase() === 'true';
+  if (nodeEnv === 'production' && !databaseSsl) {
+    throw new Error('DATABASE_SSL=true is required for the production PostgreSQL connection.');
+  }
+  if (nodeEnv === 'production' && isLocalDatabaseHost(databaseUrl.hostname)) {
+    throw new Error('Production DATABASE_URL must use the deployed PostgreSQL host, not a local address.');
   }
 
   const port = Number(env.PORT || 3000);
@@ -134,28 +173,18 @@ function readProductionConfig(env = process.env) {
     }
   }
 
-  const origins = String(env.CORS_ORIGINS || '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  for (const origin of origins) {
-    let parsed;
-    try { parsed = new URL(origin); } catch { throw new Error('Every CORS_ORIGINS entry must be an origin URL.'); }
-    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-      throw new Error('CORS_ORIGINS entries must be plain HTTP(S) origins without a path.');
-    }
-    if (env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
-      throw new Error('CORS_ORIGINS must use HTTPS in production.');
-    }
+  const origins = readCorsOrigins(env.CORS_ORIGINS, nodeEnv);
+  if (nodeEnv === 'production' && origins.length === 0) {
+    throw new Error('Configure at least one HTTPS browser origin in CORS_ORIGINS for production.');
   }
 
   return Object.freeze({
     databaseUrl: String(env.DATABASE_URL).trim(),
-    databaseSsl: String(env.DATABASE_SSL || '').trim().toLowerCase() === 'true',
+    databaseSsl,
     jwtSecret,
     encryptionKey,
     port,
-    nodeEnv: String(env.NODE_ENV || 'production'),
+    nodeEnv,
     publicBaseUrl,
     corsOrigins: origins,
     metaAppId,
@@ -174,6 +203,9 @@ function readProductionConfig(env = process.env) {
 }
 
 function readMysqlConfig(env = process.env) {
+  if (String(env.NODE_ENV || 'development') === 'production') {
+    throw new Error('MySQL runtime is development-only. Production must use the PostgreSQL API.');
+  }
   const jwtSecret = String(env.JWT_SECRET || '').trim();
   if (Buffer.byteLength(jwtSecret, 'utf8') < 32) {
     throw new Error('JWT_SECRET must be at least 32 bytes. Generate a random secret locally.');
@@ -195,17 +227,8 @@ function readMysqlConfig(env = process.env) {
     throw new Error('MYSQL_HOST, MYSQL_DATABASE, and MYSQL_USER must be valid non-empty values.');
   }
 
-  const origins = String(env.CORS_ORIGINS || 'http://localhost:8081,http://127.0.0.1:8081')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  for (const origin of origins) {
-    let parsed;
-    try { parsed = new URL(origin); } catch { throw new Error('Every CORS_ORIGINS entry must be an origin URL.'); }
-    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-      throw new Error('CORS_ORIGINS entries must be plain HTTP(S) origins without a path.');
-    }
-  }
+  const nodeEnv = String(env.NODE_ENV || 'development');
+  const origins = readCorsOrigins(env.CORS_ORIGINS, nodeEnv);
 
   return Object.freeze({
     databaseHost,
@@ -215,9 +238,9 @@ function readMysqlConfig(env = process.env) {
     databasePassword: String(env.MYSQL_PASSWORD ?? env.DB_PASSWORD ?? ''),
     jwtSecret,
     port,
-    nodeEnv: String(env.NODE_ENV || 'development'),
+    nodeEnv,
     corsOrigins: origins,
   });
 }
 
-module.exports = { readConfig, readProductionConfig, readMysqlConfig };
+module.exports = { readConfig, readProductionConfig, readMysqlConfig, isLocalDatabaseHost };

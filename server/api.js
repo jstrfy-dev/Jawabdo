@@ -185,7 +185,7 @@ function createApiHandler(config, pool, options = {}) {
       response.setHeader('access-control-allow-origin', origin);
       response.setHeader('vary', 'Origin');
       response.setHeader('access-control-allow-headers', 'authorization, content-type');
-      response.setHeader('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      response.setHeader('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     }
     if (request.method === 'OPTIONS') {
       response.writeHead(204);
@@ -246,7 +246,9 @@ function createApiHandler(config, pool, options = {}) {
         rateLimit(`login:${request.socket.remoteAddress || 'unknown'}`);
         const body = await readBody(request);
         const email = parseRequiredString(body.email, 'Email', 254).toLowerCase();
+        if (!emailPattern.test(email)) validation('Enter a valid email address.');
         const password = typeof body.password === 'string' ? body.password : '';
+        if (!password || password.length > 128) validation('Password must contain between 1 and 128 characters.');
         const user = await pool.query(
           `SELECT id, email, password_hash FROM app_users
            WHERE lower(email) = $1 AND deleted_at IS NULL AND email_verified_at IS NOT NULL`,
@@ -257,13 +259,19 @@ function createApiHandler(config, pool, options = {}) {
         if (!found || !passwordMatches) throw new HttpError(401, 'Email or password is incorrect.', 'invalid_credentials');
 
         const membership = await withTransaction(pool, async (client) => {
-          const rows = await client.query(
-            `SELECT b.id, b.name FROM business_memberships m
-             JOIN businesses b ON b.id = m.business_id
-             WHERE m.user_id = $1 ORDER BY m.created_at LIMIT 1`,
+          const memberships = await client.query(
+            `SELECT business_id FROM business_memberships
+             WHERE user_id = $1 ORDER BY created_at LIMIT 1`,
             [found.id],
           );
-          return rows.rows[0] || null;
+          const businessId = memberships.rows[0]?.business_id;
+          if (!businessId) return null;
+          await client.query("SELECT set_config('app.current_business_id', $1, true)", [businessId]);
+          const businesses = await client.query(
+            'SELECT id, name FROM businesses WHERE id = $1',
+            [businessId],
+          );
+          return businesses.rows[0] || null;
         }, { userId: found.id });
         if (!membership) throw new HttpError(403, 'No active business is linked to this account.', 'business_missing');
         const token = signToken({ sub: found.id, businessId: membership.id }, config.jwtSecret);
@@ -843,11 +851,13 @@ function createApiHandler(config, pool, options = {}) {
               : 'The request could not be completed.',
         ...(error instanceof HttpError && error.code
           ? { code: error.code }
-          : error?.code === '23P01'
-            ? { code: 'booking_conflict' }
-            : status === 409
-              ? { code: 'conflict' }
-              : {}),
+          : error?.code === '23505' && pathname === '/api/auth/register'
+            ? { code: 'account_exists' }
+            : error?.code === '23P01'
+              ? { code: 'booking_conflict' }
+              : status === 409
+                ? { code: 'conflict' }
+                : {}),
       });
       return true;
     }

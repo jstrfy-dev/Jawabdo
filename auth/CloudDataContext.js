@@ -3,6 +3,7 @@ import { useAuth } from './AuthContext';
 
 const CloudDataContext = createContext(null);
 const emptyData = { dashboard: null, bookings: [], customers: [], conversations: [], connection: null, databaseDriver: 'server' };
+const productionBuild = process.env.NODE_ENV === 'production';
 
 function displayBookingStatus(status) {
   if (status === 'pending_confirmation') return 'Pending';
@@ -80,13 +81,19 @@ export function CloudDataProvider({ children }) {
     setLoading(true);
     setError('');
     try {
-      const [dashboardResult, bookingsResult, customersResult, conversationsResult, connectionResult, publicConfig] = await Promise.all([
+      const publicConfig = await api.publicConfig();
+      if (!['postgres', 'mysql'].includes(publicConfig.databaseDriver)) {
+        throw new Error('Backend database driver response is missing or unsupported.');
+      }
+      if (productionBuild && publicConfig.databaseDriver !== 'postgres') {
+        throw new Error('Production JawabDo requires the configured PostgreSQL backend.');
+      }
+      const [dashboardResult, bookingsResult, customersResult, conversationsResult, connectionResult] = await Promise.all([
         api.getDashboard(session.accessToken),
         api.getBookings(session.accessToken),
         api.getCustomers(session.accessToken),
         api.getConversations(session.accessToken),
         api.getWhatsAppConnection(session.accessToken),
-        api.publicConfig(),
       ]);
       setData({
         dashboard: dashboardResult.dashboard,
@@ -94,7 +101,7 @@ export function CloudDataProvider({ children }) {
         customers: (customersResult.customers || []).map(mapCustomer),
         conversations: (conversationsResult.conversations || []).map(mapConversation),
         connection: connectionResult.connection,
-        databaseDriver: publicConfig.databaseDriver || 'server',
+        databaseDriver: publicConfig.databaseDriver,
       });
     } catch (requestError) {
       setData(emptyData);

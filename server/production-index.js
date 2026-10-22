@@ -4,17 +4,31 @@ const { createPool } = require('./db');
 const { readProductionConfig } = require('./config');
 const { enqueueWebhookPayload } = require('./webhook');
 const { startWorker } = require('./worker');
+const { assertProductionDatabaseReady } = require('./production-readiness');
 
 async function main() {
   const config = readProductionConfig();
   const pool = createPool(config);
-  await pool.query('SELECT 1');
-  const schema = await pool.query(
-    `SELECT to_regclass('businesses') AS businesses,
-      to_regclass('whatsapp_delivery_statuses') AS delivery_statuses`,
-  );
-  if (!schema.rows[0]?.businesses || !schema.rows[0]?.delivery_statuses) {
-    throw new Error('Database schema is missing. Run npm run db:migrate before starting the API.');
+  try {
+    await pool.query('SELECT 1');
+    await assertProductionDatabaseReady(pool);
+    const schema = await pool.query(
+      `SELECT to_regclass('businesses') AS businesses,
+        to_regclass('whatsapp_delivery_statuses') AS delivery_statuses`,
+    );
+    if (!schema.rows[0]?.businesses || !schema.rows[0]?.delivery_statuses) {
+      throw new Error('Database schema is missing. Run npm run db:migrate before starting the API.');
+    }
+  } catch (error) {
+    try {
+      await pool.end();
+    } catch (shutdownError) {
+      throw new AggregateError(
+        [error, shutdownError],
+        'PostgreSQL startup checks failed and the connection pool could not close.',
+      );
+    }
+    throw error;
   }
 
   const logger = {

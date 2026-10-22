@@ -299,13 +299,16 @@ function createMysqlApiHandler(config, pool, options = {}) {
         rateLimit(`login:${request.socket.remoteAddress || 'unknown'}`);
         const body = await readBody(request);
         const email = requiredString(body.email, 'Email', 254).toLowerCase();
+        if (!EMAIL_PATTERN.test(email)) validation('Enter a valid email address.');
+        const password = typeof body.password === 'string' ? body.password : '';
+        if (!password || password.length > 128) validation('Password must contain between 1 and 128 characters.');
         const [users] = await pool.execute(
           `SELECT id,email,password_hash FROM app_users
            WHERE email=? AND deleted_at IS NULL AND email_verified_at IS NOT NULL`,
           [email],
         );
         const user = users[0];
-        if (!user || !await verifyPassword(typeof body.password === 'string' ? body.password : '', user.password_hash)) {
+        if (!user || !await verifyPassword(password, user.password_hash)) {
           throw new HttpError(401, 'Email or password is incorrect.', 'invalid_credentials');
         }
         const [memberships] = await pool.execute(

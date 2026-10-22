@@ -2,6 +2,24 @@
 
 Audit date: 2026-10-21
 
+## Step 2 follow-up — PostgreSQL production source of truth (2026-10-22)
+
+The selected production architecture is now explicitly PostgreSQL-only: production builds require one configured HTTPS `EXPO_PUBLIC_API_URL`, verify that the API reports `databaseDriver=postgres`, and hide demo mode. Production API startup requires TLS PostgreSQL, rejects loopback DB hosts and superuser/`BYPASSRLS` roles, and checks migration ledger, required tables, forced RLS policies, and the confirmed-booking exclusion constraint. Production MySQL startup is rejected. MySQL remains supported for local development.
+
+A code-level PostgreSQL login defect was fixed: login previously selected a membership joined to `businesses` without setting the transaction-local business context required by the `businesses` RLS policy, so PostgreSQL could hide the matched business. Login now reads the user's membership under user context, sets the associated business context, and then reads that business through RLS. Regression tests cover this flow.
+
+PostgreSQL migration files 001–004 were inspected. No schema migration was necessary or added. The runner now orders migrations numerically, rejects empty/gapped/duplicate sequences and unknown ledger entries, and preserves advisory locking/transactional application. Production migration execution uses `MIGRATION_DATABASE_URL` separately from the API's least-privilege `DATABASE_URL`.
+
+Validation in this follow-up: `npm test` passed (69 tests); `npx expo-doctor` passed (21/21); `npx expo install --check` passed; and `git diff --check` passed. Automated PostgreSQL API/config/migration/readiness/transaction tests use fakes; the optional live PostgreSQL integration suite was skipped because no explicitly configured test database was available. `npm run mysql:check` failed with `ECONNREFUSED`, so local XAMPP MySQL was not running/reachable during this verification. No production PostgreSQL connection, live RLS integration test, concurrent live booking test, backup, or restore was performed. PostgreSQL is **not yet verified production-ready**; follow `DATABASE_OPERATIONS.md` for role setup, live staging checks, backup/restore, and MySQL data-retirement planning.
+
+## Step 3 follow-up — local PostgreSQL test setup (2026-10-22)
+
+The Windows environment has PostgreSQL 18.6 installed. Its `postgresql-x64-18` service is running and accepting connections on port 5432; `psql`, `pg_isready`, `pg_dump`, `pg_restore`, `createdb`, and `createuser` are installed under `C:\Program Files\PostgreSQL\18\bin` but are not on `PATH`. The existing `.env` PostgreSQL target resolves to a local database named `jawabdo`; it is not a dedicated test database and was not used for migrations or tests.
+
+The approved test setup is blocked before provisioning: a read-only connection attempt to the PostgreSQL maintenance database using the existing `.env` `DATABASE_URL` failed with PostgreSQL error `28P01` (password authentication failed). No database, role, system configuration, existing `.env` entry, or user data was changed. The existing `.env` is Git-ignored. Await a working local administrator connection or have an operator create the isolated test databases and roles through pgAdmin.
+
+The opt-in PostgreSQL integration suite was expanded to cover real signup/password-hash persistence/login, `/api/me` business context, cross-business customer read/write and service-delete denial, booking overlap and concurrent attempts, transaction rollback, and live migration-ledger/readiness consistency. The test harness rejects a missing test URL when explicitly opted in and limits cleanup to generated fixtures. These additions passed parsing and the ordinary test suite, but **were not exercised against PostgreSQL** because no authorized test database/runtime role was available. No backup or restore was attempted. Continue only after isolating `jawabdo_dev_test` and `jawabdo_restore_test` from the existing database; production readiness remains unverified.
+
 ## Executive result
 
 **Not ready for public release, real customer traffic, or Google Play production.** The app was upgraded from Expo SDK 54 to the explicitly requested SDK 57.0.31 / React Native 0.86.3 / React 19.2.3. Signed-in users can load dashboard, inbox, calendar, and customer data from the selected API runtime; conversation details are read-only, and appointment rescheduling and Meta Embedded Signup UI are missing. The PostgreSQL backend includes signed webhook/worker foundations; the MySQL backend does not implement WhatsApp. No live PostgreSQL deployment, real Meta/Anthropic exchange, production host, Android native build, or Play submission was verified.

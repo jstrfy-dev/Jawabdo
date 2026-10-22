@@ -10,7 +10,9 @@ const apiBaseUrl = resolveApiBaseUrl({
   platform: Platform.OS,
   override: process.env.EXPO_PUBLIC_API_URL,
   hostUri: Constants.expoConfig?.hostUri,
+  production: process.env.NODE_ENV === 'production',
 });
+const productionBuild = process.env.NODE_ENV === 'production';
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
@@ -34,9 +36,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await clearSession();
     setSession(null);
     setDemoMode(false);
+    try {
+      await clearSession();
+      setStartupError('');
+    } catch (error) {
+      setStartupError(`You are signed out in this app, but the saved session could not be removed. Clear the app's saved data before reopening it. ${error.message}`);
+    }
   }, []);
 
   const api = useMemo(() => createApiClient({
@@ -45,6 +52,12 @@ export function AuthProvider({ children }) {
   }), [signOut]);
 
   const signIn = useCallback(async (credentials, register = false) => {
+    if (productionBuild) {
+      const backend = await api.publicConfig();
+      if (backend.databaseDriver !== 'postgres') {
+        throw new Error('Production JawabDo requires the configured PostgreSQL backend.');
+      }
+    }
     const result = register
       ? await api.register(credentials)
       : await api.login(credentials);
@@ -56,7 +69,13 @@ export function AuthProvider({ children }) {
       user: result.user,
       business: result.business,
     };
-    await writeSession(nextSession);
+    try {
+      await writeSession(nextSession);
+    } catch (error) {
+      throw new Error(register
+        ? `Account was created, but this device could not save its sign-in session. Do not register again; sign in with the same account after checking device storage. ${error.message}`
+        : `Sign-in succeeded, but this device could not save the session. Check device storage and try again. ${error.message}`);
+    }
     setSession(nextSession);
     setDemoMode(false);
   }, [api]);
@@ -70,7 +89,9 @@ export function AuthProvider({ children }) {
     api,
     signIn,
     signOut,
-    continueDemo: () => setDemoMode(true),
+    continueDemo: () => {
+      if (!productionBuild) setDemoMode(true);
+    },
     switchToAccount: () => setDemoMode(false),
   }), [session, demoMode, loading, startupError, api, signIn, signOut]);
 

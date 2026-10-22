@@ -41,6 +41,10 @@ Or double-click `start-backend.bat`. It checks Node.js, dependencies, and databa
 
 The MySQL API provides authentication, business profile/hours, services and prices, FAQs, customers, conversations/messages, appointments, and dashboard endpoints. Every signed-in data route checks the account's business membership and scopes its queries to that business. Registration is development-only until email verification is configured.
 
+In development, the backend allows the Expo web origins `http://localhost:8081` and `http://127.0.0.1:8081` in addition to any configured `CORS_ORIGINS`; production continues to require its explicitly configured HTTPS origins. Choose exactly one API runtime on port 3000: `npm run mysql:start` (or `start-backend.bat`) uses the MySQL database, while `npm run server:dev` uses the PostgreSQL database. The app connects to whichever API is running at its configured URL; it does not switch databases or fall back when that server is unavailable.
+
+Web defaults to `http://localhost:3000`. Android uses the Expo development host address when available and falls back to `http://10.0.2.2:3000` for the emulator. For a physical phone, set `EXPO_PUBLIC_API_URL=http://<computer-LAN-IP>:3000` in the Expo environment and restart Expo; do not use `localhost` or `10.0.2.2` on the phone. The computer's firewall must allow the API port on its private network.
+
 The MySQL API does not currently configure or send WhatsApp messages/reminders. It reports WhatsApp as not connected; do not treat a saved connection row as a live integration. The existing PostgreSQL production backend and its webhook/worker implementation remain available through `npm run db:migrate` and `npm run server:dev` / `npm run server:start` when using its configured PostgreSQL database. These are separate database runtimes; MySQL startup does not migrate or modify PostgreSQL data.
 
 Signed-in accounts can request deletion from **Settings → Privacy and data** by confirming the action and re-entering their password. The API blocks deletion while other team members share any of the account's businesses; business ownership/data must be handled before retrying. Deletion removes the owned JawabDo database records and does not unsubscribe the WhatsApp app in Meta. Email verification and password reset are not implemented, so production account registration remains disabled.
@@ -63,12 +67,16 @@ The app uses `http://localhost:3000` for web/iOS, the Expo development host on A
 
 ## Existing PostgreSQL backend
 
-The original backend and durable Meta webhook/reminder worker continue to use PostgreSQL. To run that path, create/configure the PostgreSQL database and set `DATABASE_URL`, `JWT_SECRET`, and `ENCRYPTION_KEY` in `.env`, then run:
+PostgreSQL is the sole intended production source of truth for all cloud business data. Both web and mobile builds must set the same deployed API origin in build-time `EXPO_PUBLIC_API_URL`; production builds reject local/HTTP API URLs, require the API to report `databaseDriver=postgres`, and do not offer demo mode. The production API uses only PostgreSQL; startup refuses a superuser/`BYPASSRLS` database role, missing migrations, incomplete forced tenant RLS, or a missing confirmed-booking overlap constraint.
+
+The original backend and durable Meta webhook/reminder worker use PostgreSQL. For local development, configure `DATABASE_URL`, `JWT_SECRET`, and `ENCRYPTION_KEY` in `.env`, then run:
 
 ```powershell
 npm run db:migrate
 npm run server:dev
 ```
+
+For production, set `NODE_ENV=production`, `DATABASE_SSL=true`, the non-local PostgreSQL runtime connection in `DATABASE_URL`, and at least one HTTPS web origin in `CORS_ORIGINS`. The Node API validates the runtime role/schema at startup. Run migrations with a separate `MIGRATION_DATABASE_URL` role; never use that elevated credential for the running API. Set the deployed HTTPS API origin as `EXPO_PUBLIC_API_URL` in both the web and mobile build environments. See [DATABASE_OPERATIONS.md](./DATABASE_OPERATIONS.md) for role, migration, backup/restore, and MySQL retirement/migration guidance.
 
 `npm run whatsapp:dev` is a separate allowlist-only test webhook service. It is not the MySQL API. See [WHATSAPP_SETUP.md](./WHATSAPP_SETUP.md) for existing Meta integration requirements and limitations.
 

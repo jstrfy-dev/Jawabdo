@@ -45,8 +45,18 @@ function createApiClient({
           signal: controller.signal,
         });
       } catch (error) {
-        if (controller.signal.aborted) throw new ApiError('Request timed out or was cancelled. Check the server connection and try again.', 0, 'network_timeout');
-        throw new ApiError('JawabDo server se rabta nahi ho saka. Server aur network check karein.', 0, 'network_error');
+        if (controller.signal.aborted) {
+          throw new ApiError(
+            'JawabDo server request time par complete nahi kar saka. Server, port 3000, API URL aur network check karein.',
+            0,
+            'network_timeout',
+          );
+        }
+        throw new ApiError(
+          'JawabDo server se rabta nahi ho saka. Server/port 3000, API URL, browser CORS allowlist, aur phone par PC ka LAN network check karein.',
+          0,
+          'network_error',
+        );
       }
 
       let payload = null;

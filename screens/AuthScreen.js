@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button, Screen } from '../ui/kit';
 import { useTheme } from '../ui/theme';
@@ -8,6 +8,7 @@ export default function AuthScreen() {
   const theme = useTheme();
   const styles = makeStyles(theme);
   const { apiBaseUrl, signIn, continueDemo, startupError } = useAuth();
+  const demoAvailable = __DEV__;
   const [register, setRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,28 +16,41 @@ export default function AuthScreen() {
   const [category, setCategory] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(startupError);
+  const submitting = useRef(false);
 
   async function submit() {
+    if (submitting.current) return;
     setError('');
-    if (!email.trim() || !password) {
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail || !password) {
       setError('Email aur password dono darj karein.');
       return;
     }
-    if (register && (!businessName.trim() || password.length < 12)) {
-      setError('Business name dein; password kam az kam 12 characters ka ho.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Valid email address darj karein.');
       return;
     }
+    if (password.length > 128) {
+      setError('Password 128 characters se zyada nahi ho sakta.');
+      return;
+    }
+    if (register && (!businessName.trim() || password.length < 12 || password.length > 128)) {
+      setError('Business name dein; password 12 se 128 characters ka hona chahiye.');
+      return;
+    }
+    submitting.current = true;
     setBusy(true);
     try {
       await signIn(
         register
-          ? { email: email.trim(), password, businessName: businessName.trim(), category: category.trim() }
-          : { email: email.trim(), password },
+          ? { email: normalizedEmail, password, businessName: businessName.trim(), category: category.trim() }
+          : { email: normalizedEmail, password },
         register,
       );
     } catch (requestError) {
-      setError(requestError.message);
+      setError(requestError.message || 'Request complete nahi ho saki. Dobara koshish karein.');
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -51,7 +65,7 @@ export default function AuthScreen() {
           <Text style={styles.label}>Email</Text>
           <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" placeholder="name@example.com" placeholderTextColor={theme.textMuted} style={styles.input} />
           <Text style={styles.label}>Password</Text>
-          <TextInput value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoComplete={register ? 'new-password' : 'current-password'} placeholder={register ? 'Kam az kam 12 characters' : 'Password'} placeholderTextColor={theme.textMuted} style={styles.input} />
+          <TextInput value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoComplete={register ? 'new-password' : 'current-password'} maxLength={128} placeholder={register ? 'Kam az kam 12 characters' : 'Password'} placeholderTextColor={theme.textMuted} style={styles.input} />
           {register ? (
             <>
               <Text style={styles.label}>Business name</Text>
@@ -67,8 +81,12 @@ export default function AuthScreen() {
           <Button label={register ? 'Pehle se account hai? Sign in' : 'Naya account banayein'} variant="ghost" onPress={() => { setError(''); setRegister(!register); }} disabled={busy} />
           <Text style={styles.endpoint}>API: {apiBaseUrl}</Text>
         </View>
-        <Button label="Local demo continue karein" variant="ghost" onPress={continueDemo} />
-        <Text style={styles.caption}>Demo mode local sample data hai; cloud account ya live WhatsApp connection nahi.</Text>
+        {demoAvailable ? (
+          <>
+            <Button label="Local demo continue karein" variant="ghost" onPress={continueDemo} />
+            <Text style={styles.caption}>Demo mode local sample data hai; cloud account ya live WhatsApp connection nahi.</Text>
+          </>
+        ) : null}
       </ScrollView>
     </Screen>
   );

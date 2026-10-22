@@ -12,6 +12,16 @@ function validEnvironment(overrides = {}) {
   };
 }
 
+function productionEnvironment(overrides = {}) {
+  return validEnvironment({
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://jawabdo_runtime@db.example.test:5432/jawabdo',
+    DATABASE_SSL: 'true',
+    CORS_ORIGINS: 'https://app.example.test',
+    ...overrides,
+  });
+}
+
 describe('production server configuration', () => {
   it('accepts valid server-only keys and leaves Meta integration explicitly unset', () => {
     const config = readProductionConfig(validEnvironment());
@@ -19,6 +29,7 @@ describe('production server configuration', () => {
     assert.equal(config.metaAppSecret, '');
     assert.equal(config.appSecret, '');
     assert.equal(config.emailVerificationConfigured, false);
+    assert.deepEqual(config.corsOrigins, ['http://localhost:8081', 'http://127.0.0.1:8081']);
   });
 
   describe('XAMPP MySQL configuration', () => {
@@ -32,6 +43,20 @@ describe('production server configuration', () => {
       assert.equal(config.databaseName, 'jawabdo');
       assert.equal(config.databaseUser, 'root');
       assert.equal(config.databasePassword, '');
+      assert.deepEqual(config.corsOrigins, ['http://localhost:8081', 'http://127.0.0.1:8081']);
+    });
+
+    it('keeps local browser origins available in development alongside configured origins', () => {
+      const config = readMysqlConfig({
+        JWT_SECRET: 'unit-test-jwt-secret-with-at-least-thirty-two-bytes',
+        NODE_ENV: 'development',
+        CORS_ORIGINS: 'https://your-app-domain.example,http://localhost:8081',
+      });
+      assert.deepEqual(config.corsOrigins, [
+        'https://your-app-domain.example',
+        'http://localhost:8081',
+        'http://127.0.0.1:8081',
+      ]);
     });
 
     it('uses explicit MySQL environment values and validates ports and JWT secret', () => {
@@ -69,11 +94,44 @@ describe('production server configuration', () => {
 
   it('requires HTTPS public URLs in production', () => {
     assert.throws(
-      () => readProductionConfig(validEnvironment({
-        NODE_ENV: 'production',
+      () => readProductionConfig(productionEnvironment({
         PUBLIC_BASE_URL: 'http://example.test',
       })),
       /HTTPS/,
+    );
+  });
+
+  it('does not add local development origins to production CORS configuration', () => {
+    const config = readProductionConfig(productionEnvironment());
+    assert.deepEqual(config.corsOrigins, ['https://app.example.test']);
+  });
+
+  it('requires TLS, a non-local database host, and browser origins in production', () => {
+    assert.throws(
+      () => readProductionConfig(productionEnvironment({
+        DATABASE_SSL: 'false',
+      })),
+      /DATABASE_SSL=true/,
+    );
+    assert.throws(
+      () => readProductionConfig(productionEnvironment({
+        DATABASE_URL: 'postgresql://localhost:5432/jawabdo',
+      })),
+      /deployed PostgreSQL host/,
+    );
+    assert.throws(
+      () => readProductionConfig(productionEnvironment({ CORS_ORIGINS: '' })),
+      /HTTPS browser origin/,
+    );
+  });
+
+  it('prevents starting the MySQL runtime in production', () => {
+    assert.throws(
+      () => readMysqlConfig({
+        NODE_ENV: 'production',
+        JWT_SECRET: 'unit-test-jwt-secret-with-at-least-thirty-two-bytes',
+      }),
+      /MySQL runtime is development-only/,
     );
   });
 });
